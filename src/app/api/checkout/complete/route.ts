@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   
   try {
     const body = await req.json();
-    const { merchant_key, draft_order_id, shipping_address, email } = body;
+    const { merchant_key, draft_order_id, shipping_address, email, phone } = body;
 
     if (!merchant_key || !draft_order_id || !shipping_address) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400, headers });
@@ -44,6 +44,18 @@ export async function POST(req: Request) {
       shipping_address: shipping_address,
       use_customer_default_address: false
     };
+    
+    // Explicitly link or create the customer in Shopify
+    const customerObj: any = {};
+    if (email) customerObj.email = email;
+    if (phone) customerObj.phone = phone.startsWith('+') ? phone : `+91${phone.replace(/\D/g, '')}`;
+    if (shipping_address.first_name) customerObj.first_name = shipping_address.first_name;
+    if (shipping_address.last_name) customerObj.last_name = shipping_address.last_name;
+    
+    if (Object.keys(customerObj).length > 0) {
+      draftPayload.customer = customerObj;
+    }
+    
     if (email) draftPayload.email = email;
 
     await fetch(`${formattedUrl}/admin/api/2024-01/draft_orders/${draft_order_id}.json`, {

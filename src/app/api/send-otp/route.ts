@@ -32,8 +32,10 @@ export async function POST(req: Request) {
 
     const supabaseUrl = process.env.SUPABASE_URL || '';
     const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+    
+    let resolvedPhone = phone;
 
-    // 1. Verify merchant
+    // 1. Verify merchant and fetch device phone if needed
     if (supabaseUrl && supabaseKey) {
       const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id`, {
         headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
@@ -42,19 +44,36 @@ export async function POST(req: Request) {
       if (!merchants || merchants.length === 0) {
         return NextResponse.json({ error: 'Invalid merchant key' }, { status: 401, headers });
       }
+      
+      // If phone is missing but device_id is present, get the phone from DB
+      if (!resolvedPhone && device_id) {
+        const deviceRes = await fetch(`${supabaseUrl}/rest/v1/network_devices?device_id=eq.${device_id}&select=phone`, {
+          headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+        });
+        const devices = await deviceRes.json();
+        if (devices && devices.length > 0) {
+          resolvedPhone = devices[0].phone;
+        } else {
+          return NextResponse.json({ error: 'Device not recognized. Please use a different number.' }, { status: 400, headers });
+        }
+      }
+    }
+
+    if (!resolvedPhone) {
+      return NextResponse.json({ error: 'Phone number could not be resolved' }, { status: 400, headers });
     }
 
     // 2. Generate OTP
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
     const expires = Date.now() + 5 * 60 * 1000; // 5 minutes
-    const data = `${phone}.${otp}.${expires}`;
+    const data = `${resolvedPhone}.${otp}.${expires}`;
     const signature = crypto.createHmac('sha256', OTP_SECRET)
                             .update(data)
                             .digest('hex');
     const fullSignature = `${signature}.${expires}`;
 
     // 3. Format phone for WhatsApp — must be 91XXXXXXXXXX
-    let sendPhone = (phone || '').replace(/\D/g, '');
+    let sendPhone = (resolvedPhone || '').replace(/\D/g, '');
     if (sendPhone.length === 10) sendPhone = '91' + sendPhone;
     else if (sendPhone.startsWith('0')) sendPhone = '91' + sendPhone.slice(1);
 
@@ -102,7 +121,7 @@ export async function POST(req: Request) {
 
     console.log('[11FIT OTP] Sent successfully:', waResult.messages?.[0]?.id);
 
-    return NextResponse.json({ success: true, signature: fullSignature }, { headers });
+    return NextResponse.json({ success: true, signature: fullSignature, real_phone: resolvedPhone }, { headers });
 
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'Internal server error';
