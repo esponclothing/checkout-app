@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   
   try {
     const body = await req.json();
-    const { merchant_key, items, discount_code, cart_discount, cart_subtotal } = body;
+    const { merchant_key, items, discount_code, cart_discount, cart_subtotal, raw_cart } = body;
 
     if (!merchant_key || !items) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400, headers });
@@ -138,7 +138,7 @@ export async function POST(req: Request) {
           device_id: deviceId,
           draft_order_id: shopifyData.draft_order.id.toString(),
           invoice_url: shopifyData.draft_order.invoice_url,
-          cart_details: items,
+          cart_details: raw_cart || items,
           status: 'abandoned'
         })
       });
@@ -153,6 +153,7 @@ export async function POST(req: Request) {
       total_price: shopifyData.draft_order.total_price,
       discount_amount: shopifyData.draft_order.applied_discount ? shopifyData.draft_order.applied_discount.amount : "0.00",
       discount_title: shopifyData.draft_order.applied_discount ? shopifyData.draft_order.applied_discount.title : null,
+      invoice_url: shopifyData.draft_order.invoice_url,
       payment_settings: merchant.payment_settings || {}
     }, { headers });
 

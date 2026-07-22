@@ -13,6 +13,7 @@ export default function PaymentSettingsForm({ initialSettings }: { initialSettin
     partial_cod_enabled: false,
     partial_cod_type: 'percent',
     partial_cod_value: 0,
+    use_shopify_checkout_prepaid: false,
     cashfree_app_id: '',
     cashfree_secret_key: '',
     cashfree_env: 'sandbox'
@@ -21,7 +22,8 @@ export default function PaymentSettingsForm({ initialSettings }: { initialSettin
   const [message, setMessage] = useState('');
 
   const handleChange = (key: string, value: any) => {
-    setSettings({ ...settings, [key]: value });
+    let newSettings = { ...settings, [key]: value };
+    setSettings(newSettings);
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -66,6 +68,13 @@ export default function PaymentSettingsForm({ initialSettings }: { initialSettin
           <label className="flex items-center gap-3 cursor-pointer">
             <input type="checkbox" checked={settings.partial_cod_enabled} onChange={(e) => handleChange('partial_cod_enabled', e.target.checked)} className="w-5 h-5 accent-yellow-500" />
             <span className="text-slate-300 font-medium">Enable Partial COD (Pay a portion upfront)</span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" checked={settings.use_shopify_checkout_prepaid} onChange={(e) => handleChange('use_shopify_checkout_prepaid', e.target.checked)} className="w-5 h-5 accent-yellow-500" />
+            <div>
+              <span className="text-slate-300 font-medium block">Route Prepaid Orders via Native Shopify Checkout</span>
+              <span className="text-slate-500 text-xs">If enabled, standard Prepaid orders will redirect to Shopify Checkout instead of popup.</span>
+            </div>
           </label>
         </div>
       </div>
