@@ -45,7 +45,8 @@ export async function POST(req: Request) {
     const merchantId = merchants[0].id;
 
     // 3. Set Session Cookie
-    cookies().set('admin_session', merchantId, {
+    const cookieStore = await cookies();
+    cookieStore.set('admin_session', merchantId, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',

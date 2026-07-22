@@ -152,7 +152,8 @@ export async function POST(req: Request) {
       total_tax: shopifyData.draft_order.total_tax,
       total_price: shopifyData.draft_order.total_price,
       discount_amount: shopifyData.draft_order.applied_discount ? shopifyData.draft_order.applied_discount.amount : "0.00",
-      discount_title: shopifyData.draft_order.applied_discount ? shopifyData.draft_order.applied_discount.title : null
+      discount_title: shopifyData.draft_order.applied_discount ? shopifyData.draft_order.applied_discount.title : null,
+      payment_settings: merchant.payment_settings || {}
     }, { headers });
 
   } catch (error) {

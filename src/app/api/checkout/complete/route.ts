@@ -47,7 +47,7 @@ export async function POST(req: Request) {
     const draftPayload: any = {
       id: draft_order_id,
       shipping_address: shipping_address,
-      billing_address: shipping_address, // Often required for a complete profile
+      billing_address: shipping_address,
       use_customer_default_address: false
     };
     
@@ -64,19 +64,70 @@ export async function POST(req: Request) {
     
     if (email) draftPayload.email = email;
 
+    // Optional: Add COD Fee if selected
+    if (body.payment_method === 'cod' && merchant.payment_settings?.cod_enabled && merchant.payment_settings?.cod_fee > 0) {
+      draftPayload.applied_discount = {
+        description: "COD Fee",
+        value: `-${merchant.payment_settings.cod_fee}`,
+        value_type: "fixed_amount",
+        amount: `-${merchant.payment_settings.cod_fee}`
+      };
+    }
+
+    // Apply Prepaid Discount
+    if (body.payment_method === 'prepaid' && merchant.payment_settings?.prepaid_offer_enabled) {
+      let discountVal = merchant.payment_settings.prepaid_offer_value;
+      let valType = merchant.payment_settings.prepaid_offer_type === 'percent' ? 'percentage' : 'fixed_amount';
+      draftPayload.applied_discount = {
+        description: "Prepaid Offer",
+        value: `${discountVal}`,
+        value_type: valType,
+        amount: merchant.payment_settings.prepaid_offer_type === 'percent' ? null : `${discountVal}`
+      };
+    }
+
     await fetch(`${formattedUrl}/admin/api/2024-01/draft_orders/${draft_order_id}.json`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         'X-Shopify-Access-Token': shopifyToken
       },
-      body: JSON.stringify({
-        draft_order: draftPayload
-      })
+      body: JSON.stringify({ draft_order: draftPayload })
     });
 
-    // 2. Complete the Draft Order (Marks as pending payment for COD)
-    const completeRes = await fetch(`${shopifyUrl}/admin/api/2024-01/draft_orders/${draft_order_id}/complete.json?payment_pending=true`, {
+    // 2. Verify Cashfree Payment (if applicable)
+    let paymentPending = true;
+    let paymentStatus = 'pending';
+
+    if (body.cashfree_order_id && merchant.payment_settings) {
+      const cashfreeUrl = merchant.payment_settings.cashfree_env === 'production' 
+        ? `https://api.cashfree.com/pg/orders/${body.cashfree_order_id}`
+        : `https://sandbox.cashfree.com/pg/orders/${body.cashfree_order_id}`;
+
+      const cfVerifyRes = await fetch(cashfreeUrl, {
+        headers: {
+          'x-client-id': merchant.payment_settings.cashfree_app_id,
+          'x-client-secret': merchant.payment_settings.cashfree_secret_key,
+          'x-api-version': '2023-08-01'
+        }
+      });
+      
+      if (!cfVerifyRes.ok) {
+        return NextResponse.json({ error: 'Failed to verify payment with Cashfree' }, { status: 400, headers });
+      }
+
+      const cfData = await cfVerifyRes.json();
+      
+      if (cfData.order_status === 'PAID') {
+        paymentStatus = 'paid';
+        paymentPending = body.payment_method === 'partial_cod'; // If partial COD, still pending remainder
+      } else {
+        return NextResponse.json({ error: `Payment not completed. Status: ${cfData.order_status}` }, { status: 400, headers });
+      }
+    }
+
+    // 3. Complete the Draft Order
+    const completeRes = await fetch(`${formattedUrl}/admin/api/2024-01/draft_orders/${draft_order_id}/complete.json?payment_pending=${paymentPending}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
