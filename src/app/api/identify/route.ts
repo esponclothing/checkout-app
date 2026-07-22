@@ -77,9 +77,20 @@ export async function POST(req: Request) {
       masked = `+91-XXXXX-XX${last3}`;
     }
 
+    // Fetch the email if we have it
+    let email = null;
+    const userRes = await fetch(`${supabaseUrl}/rest/v1/network_users?phone=eq.${encodeURIComponent(phone)}&select=email`, {
+      headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+    });
+    const users = await userRes.json();
+    if (users && users.length > 0) {
+      email = users[0].email;
+    }
+
     return NextResponse.json({
       identified: true,
       masked_phone: masked,
+      email: email
       // Note: We DO NOT send the address here. Only after OTP.
     }, { headers });
 

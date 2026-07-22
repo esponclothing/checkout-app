@@ -35,6 +35,8 @@ export async function POST(req: Request) {
     
     let resolvedPhone = phone;
 
+    let merchantId = null;
+
     // 1. Verify merchant and fetch device phone if needed
     if (supabaseUrl && supabaseKey) {
       const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id`, {
@@ -44,6 +46,7 @@ export async function POST(req: Request) {
       if (!merchants || merchants.length === 0) {
         return NextResponse.json({ error: 'Invalid merchant key' }, { status: 401, headers });
       }
+      merchantId = merchants[0].id;
       
       // If phone is missing but device_id is present, get the phone from DB
       if (!resolvedPhone && device_id) {
@@ -137,6 +140,25 @@ export async function POST(req: Request) {
     }
 
     console.log('[11FIT OTP] Sent successfully:', waResult.messages?.[0]?.id);
+
+    // 5. Log to OTP Analytics
+    if (supabaseUrl && supabaseKey && merchantId) {
+      await fetch(`${supabaseUrl}/rest/v1/otp_logs`, {
+        method: 'POST',
+        headers: { 
+          'apikey': supabaseKey, 
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({
+          merchant_id: merchantId,
+          phone: resolvedPhone,
+          device_id: device_id || null,
+          status: 'sent'
+        })
+      });
+    }
 
     return NextResponse.json({ success: true, signature: fullSignature, real_phone: resolvedPhone }, { headers });
 

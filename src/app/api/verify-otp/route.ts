@@ -44,6 +44,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid merchant key' }, { status: 401, headers });
     }
 
+    let merchantId = merchants[0].id;
+
     // 2. Verify OTP
     const [hash, expires] = signature.split('.');
     if (Date.now() > parseInt(expires)) {
@@ -60,9 +62,21 @@ export async function POST(req: Request) {
       if (phone === '9306817689' && otp === '1234') {
         // Allow
       } else {
+        await fetch(`${supabaseUrl}/rest/v1/otp_logs?phone=eq.${encodeURIComponent(phone)}&merchant_id=eq.${merchantId}&status=eq.sent`, {
+          method: 'PATCH',
+          headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'failed' })
+        });
         return NextResponse.json({ error: 'Invalid OTP' }, { status: 400, headers });
       }
     }
+
+    // Mark OTP as verified
+    await fetch(`${supabaseUrl}/rest/v1/otp_logs?phone=eq.${encodeURIComponent(phone)}&merchant_id=eq.${merchantId}&status=eq.sent`, {
+      method: 'PATCH',
+      headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'verified' })
+    });
 
     // 3. Link Device to Phone
     let formattedPhone = phone;

@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   
   try {
     const body = await req.json();
-    const { merchant_key, items, discount_code } = body;
+    const { merchant_key, items, discount_code, cart_discount, cart_subtotal } = body;
 
     if (!merchant_key || !items) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400, headers });
@@ -48,11 +48,58 @@ export async function POST(req: Request) {
       }
     };
 
+    let totalDiscountAmount = cart_discount ? parseFloat(cart_discount) / 100 : 0;
+    let manualDiscountValid = false;
+
     if (discount_code) {
+      try {
+        const lookupRes = await fetch(`${formattedUrl}/admin/api/2024-01/discount_codes/lookup.json?code=${discount_code}`, {
+          headers: { 'X-Shopify-Access-Token': shopifyToken },
+          redirect: 'manual'
+        });
+        
+        const location = lookupRes.headers.get('location');
+        if (!location) {
+          return NextResponse.json({ error: 'invalid_discount' }, { status: 400, headers });
+        }
+        
+        const match = location.match(/price_rules\/(\d+)/);
+        if (match && match[1]) {
+          const priceRuleId = match[1];
+          const ruleRes = await fetch(`${formattedUrl}/admin/api/2024-01/price_rules/${priceRuleId}.json`, {
+            headers: { 'X-Shopify-Access-Token': shopifyToken }
+          });
+          const ruleData = await ruleRes.json();
+          if (ruleData.price_rule) {
+            const rule = ruleData.price_rule;
+            const subtotalInRupees = cart_subtotal ? parseFloat(cart_subtotal) / 100 : 0;
+            const ruleValue = Math.abs(parseFloat(rule.value));
+            
+            let manualDiscountValue = 0;
+            if (rule.value_type === 'percentage') {
+              manualDiscountValue = subtotalInRupees * (ruleValue / 100);
+            } else {
+              manualDiscountValue = ruleValue;
+            }
+            
+            totalDiscountAmount += manualDiscountValue;
+            manualDiscountValid = true;
+          } else {
+            return NextResponse.json({ error: 'invalid_discount' }, { status: 400, headers });
+          }
+        } else {
+          return NextResponse.json({ error: 'invalid_discount' }, { status: 400, headers });
+        }
+      } catch (err) {
+        return NextResponse.json({ error: 'invalid_discount' }, { status: 400, headers });
+      }
+    }
+
+    if (totalDiscountAmount > 0) {
       draftOrderPayload.draft_order.applied_discount = {
-        title: discount_code,
-        value: "10.0", // In a real app, query Shopify PriceRules to validate the code value
-        value_type: "percentage"
+        title: (manualDiscountValid ? discount_code + " + Cart Discounts" : "Cart Discounts"),
+        value: totalDiscountAmount.toFixed(2),
+        value_type: "fixed_amount"
       };
     }
 
@@ -72,13 +119,40 @@ export async function POST(req: Request) {
       throw new Error(JSON.stringify(shopifyData));
     }
 
+    // 3. Log checkout session for Abandoned Checkout tracking
+    const deviceId = body.device_id || null;
+    const phone = body.phone || null;
+
+    if (supabaseUrl && supabaseKey) {
+      await fetch(`${supabaseUrl}/rest/v1/checkout_sessions`, {
+        method: 'POST',
+        headers: { 
+          'apikey': supabaseKey, 
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({
+          merchant_id: merchant.id,
+          phone: phone,
+          device_id: deviceId,
+          draft_order_id: shopifyData.draft_order.id.toString(),
+          invoice_url: shopifyData.draft_order.invoice_url,
+          cart_details: items,
+          status: 'abandoned'
+        })
+      });
+    }
+
     // Return the calculated totals back to our Headless App
     return NextResponse.json({ 
       success: true, 
       draft_order_id: shopifyData.draft_order.id,
       subtotal: shopifyData.draft_order.subtotal_price,
       total_tax: shopifyData.draft_order.total_tax,
-      total_price: shopifyData.draft_order.total_price
+      total_price: shopifyData.draft_order.total_price,
+      discount_amount: shopifyData.draft_order.applied_discount ? shopifyData.draft_order.applied_discount.amount : "0.00",
+      discount_title: shopifyData.draft_order.applied_discount ? shopifyData.draft_order.applied_discount.title : null
     }, { headers });
 
   } catch (error) {

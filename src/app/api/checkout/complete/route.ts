@@ -38,10 +38,16 @@ export async function POST(req: Request) {
     let formattedUrl = shopifyUrl.startsWith('http') ? shopifyUrl : `https://${shopifyUrl}`;
     const shopifyToken = merchant.shopify_access_token || process.env.VITE_SHOPIFY_ACCESS_TOKEN;
 
+    // Make sure shipping address has the phone number strictly mapped!
+    const formattedPhone = phone ? (phone.startsWith('+') ? phone : `+91${phone.replace(/\D/g, '')}`) : undefined;
+    
+    if (formattedPhone) shipping_address.phone = formattedPhone;
+    
     // 1. Update Draft Order with Shipping Address and Email
     const draftPayload: any = {
       id: draft_order_id,
       shipping_address: shipping_address,
+      billing_address: shipping_address, // Often required for a complete profile
       use_customer_default_address: false
     };
     
@@ -82,6 +88,19 @@ export async function POST(req: Request) {
 
     if (!completeRes.ok) {
       throw new Error(JSON.stringify(completeData));
+    }
+
+    // 3. Update checkout_sessions status to completed
+    if (supabaseUrl && supabaseKey) {
+      await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?draft_order_id=eq.${draft_order_id}`, {
+        method: 'PATCH',
+        headers: { 
+          'apikey': supabaseKey, 
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ status: 'completed' })
+      });
     }
 
     return NextResponse.json({ 
