@@ -64,25 +64,45 @@ export async function POST(req: Request) {
     
     if (email) draftPayload.email = email;
 
-    // Optional: Add COD Fee if selected
+    // Fetch current draft order to preserve line items and existing discounts
+    const getDraftRes = await fetch(`${formattedUrl}/admin/api/2024-01/draft_orders/${draft_order_id}.json`, {
+      headers: { 'X-Shopify-Access-Token': shopifyToken }
+    });
+    const existingDraftData = await getDraftRes.json();
+    const existingDraft = existingDraftData.draft_order || { line_items: [] };
+
+    // 1. Add COD Fee as a Custom Line Item
     if (body.payment_method === 'cod' && merchant.payment_settings?.cod_enabled && merchant.payment_settings?.cod_fee > 0) {
-      draftPayload.applied_discount = {
-        description: "COD Fee",
-        value: `-${merchant.payment_settings.cod_fee}`,
-        value_type: "fixed_amount",
-        amount: `-${merchant.payment_settings.cod_fee}`
-      };
+      draftPayload.line_items = [
+        ...existingDraft.line_items,
+        {
+          title: "Cash on Delivery (COD) Fee",
+          price: merchant.payment_settings.cod_fee.toString(),
+          quantity: 1,
+          custom: true
+        }
+      ];
     }
 
-    // Apply Prepaid Discount
+    // 2. Apply Prepaid Discount (Combined with existing coupon if any)
     if (body.payment_method === 'prepaid' && merchant.payment_settings?.prepaid_offer_enabled) {
-      let discountVal = merchant.payment_settings.prepaid_offer_value;
-      let valType = merchant.payment_settings.prepaid_offer_type === 'percent' ? 'percentage' : 'fixed_amount';
+      let currentDiscountAmt = parseFloat(existingDraft.applied_discount?.amount || '0');
+      let currentDesc = existingDraft.applied_discount?.description || 'Discount';
+
+      let newDiscountAmt = 0;
+      if (merchant.payment_settings.prepaid_offer_type === 'percent') {
+        newDiscountAmt = (parseFloat(existingDraft.total_price) * merchant.payment_settings.prepaid_offer_value) / 100;
+      } else {
+        newDiscountAmt = merchant.payment_settings.prepaid_offer_value;
+      }
+
+      let totalDiscount = currentDiscountAmt + newDiscountAmt;
+
       draftPayload.applied_discount = {
-        description: "Prepaid Offer",
-        value: `${discountVal}`,
-        value_type: valType,
-        amount: merchant.payment_settings.prepaid_offer_type === 'percent' ? null : `${discountVal}`
+        description: currentDiscountAmt > 0 ? `${currentDesc} + Prepaid Offer` : `Prepaid Offer`,
+        value: `${totalDiscount.toFixed(2)}`,
+        value_type: 'fixed_amount',
+        amount: `${totalDiscount.toFixed(2)}`
       };
     }
 

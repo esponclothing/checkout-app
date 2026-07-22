@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import LogoutButton from './LogoutButton';
 import PaymentSettingsForm from './PaymentSettingsForm';
+import AbandonedCartsTable from './AbandonedCartsTable';
 
 export const dynamic = 'force-dynamic';
 
@@ -182,50 +183,7 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
         )}
 
         {currentTab === 'abandoned' && (
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden mb-10">
-            <div className="p-6 border-b border-slate-800">
-              <h3 className="text-lg font-bold text-white">Abandoned Checkouts</h3>
-            </div>
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-800 text-sm text-slate-400 bg-slate-900/50">
-                  <th className="p-4 font-medium">Date</th>
-                  <th className="p-4 font-medium">Customer Phone</th>
-                  <th className="p-4 font-medium">Device ID</th>
-                  <th className="p-4 font-medium">Items</th>
-                  <th className="p-4 font-medium">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.abandoned.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="p-8 text-center text-slate-500">No abandoned checkouts.</td>
-                  </tr>
-                )}
-                {data.abandoned.map((s: any) => (
-                  <tr key={s.id} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition">
-                    <td className="p-4 text-slate-400">{new Date(s.created_at).toLocaleString()}</td>
-                    <td className="p-4 font-semibold text-white">{s.phone || 'Unknown'}</td>
-                    <td className="p-4">
-                      <code className="text-xs text-slate-500 bg-slate-950 px-2 py-1 rounded">{s.device_id?.substring(0, 8) || 'N/A'}...</code>
-                    </td>
-                    <td className="p-4 text-slate-400">
-                      {s.cart_details?.length || 0} items
-                    </td>
-                    <td className="p-4">
-                      {s.invoice_url ? (
-                        <a href={s.invoice_url} target="_blank" rel="noreferrer" className="text-yellow-500 hover:text-yellow-400 font-semibold text-sm flex items-center gap-1">
-                          Recovery Link <ShoppingCart className="w-3 h-3" />
-                        </a>
-                      ) : (
-                        <span className="text-slate-600 text-sm">No Link</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <AbandonedCartsTable abandoned={data.abandoned} customers={data.customers} />
         )}
 
         {currentTab === 'otp' && (

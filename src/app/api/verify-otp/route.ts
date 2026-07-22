@@ -113,6 +113,17 @@ export async function POST(req: Request) {
           user_agent: req.headers.get('user-agent') || 'unknown'
         })
       });
+
+      // Update any abandoned checkout sessions for this device with the new phone number
+      await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?device_id=eq.${did}`, {
+        method: 'PATCH',
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ phone: formattedPhone })
+      });
     }
 
     // 4. SECURELY FETCH AND RETURN SAVED ADDRESSES
