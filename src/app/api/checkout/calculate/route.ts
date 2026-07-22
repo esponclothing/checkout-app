@@ -35,6 +35,7 @@ export async function POST(req: Request) {
 
     const merchant = merchants[0];
     const shopifyUrl = merchant.shopify_store_url || 'https://esponsports.myshopify.com';
+    let formattedUrl = shopifyUrl.startsWith('http') ? shopifyUrl : `https://${shopifyUrl}`;
     const shopifyToken = merchant.shopify_access_token || process.env.VITE_SHOPIFY_ACCESS_TOKEN;
 
     // Prepare Shopify Draft Order payload
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
     }
 
     // Call Shopify API to create Draft Order (this calculates taxes/totals natively)
-    const shopifyRes = await fetch(`${shopifyUrl}/admin/api/2024-01/draft_orders.json`, {
+    const shopifyRes = await fetch(`${formattedUrl}/admin/api/2024-01/draft_orders.json`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

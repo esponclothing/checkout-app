@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   
   try {
     const body = await req.json();
-    const { merchant_key, draft_order_id, shipping_address } = body;
+    const { merchant_key, draft_order_id, shipping_address, email } = body;
 
     if (!merchant_key || !draft_order_id || !shipping_address) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400, headers });
@@ -35,21 +35,25 @@ export async function POST(req: Request) {
 
     const merchant = merchants[0];
     const shopifyUrl = merchant.shopify_store_url || 'https://esponsports.myshopify.com';
+    let formattedUrl = shopifyUrl.startsWith('http') ? shopifyUrl : `https://${shopifyUrl}`;
     const shopifyToken = merchant.shopify_access_token || process.env.VITE_SHOPIFY_ACCESS_TOKEN;
 
-    // 1. Update Draft Order with Shipping Address
-    await fetch(`${shopifyUrl}/admin/api/2024-01/draft_orders/${draft_order_id}.json`, {
+    // 1. Update Draft Order with Shipping Address and Email
+    const draftPayload: any = {
+      id: draft_order_id,
+      shipping_address: shipping_address,
+      use_customer_default_address: false
+    };
+    if (email) draftPayload.email = email;
+
+    await fetch(`${formattedUrl}/admin/api/2024-01/draft_orders/${draft_order_id}.json`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         'X-Shopify-Access-Token': shopifyToken
       },
       body: JSON.stringify({
-        draft_order: {
-          id: draft_order_id,
-          shipping_address: shipping_address,
-          use_customer_default_address: false
-        }
+        draft_order: draftPayload
       })
     });
 
