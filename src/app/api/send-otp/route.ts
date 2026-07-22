@@ -53,9 +53,26 @@ export async function POST(req: Request) {
         const devices = await deviceRes.json();
         if (devices && devices.length > 0) {
           resolvedPhone = devices[0].phone;
-        } else {
-          return NextResponse.json({ error: 'Device not recognized. Please use a different number.' }, { status: 400, headers });
         }
+      }
+      
+      // Fallback to IP address if device_id didn't match (matches identify route logic)
+      if (!resolvedPhone) {
+        const ipAddress = req.headers.get('x-forwarded-for') || 'unknown';
+        const cleanIp = ipAddress.split(',')[0].trim();
+        if (cleanIp !== 'unknown') {
+          const ipRes = await fetch(`${supabaseUrl}/rest/v1/network_devices?ip_address=eq.${cleanIp}&select=phone&order=created_at.desc&limit=1`, {
+            headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+          });
+          const ipDevices = await ipRes.json();
+          if (ipDevices && ipDevices.length > 0) {
+            resolvedPhone = ipDevices[0].phone;
+          }
+        }
+      }
+      
+      if (!resolvedPhone) {
+        return NextResponse.json({ error: 'Device not recognized. Please use a different number.' }, { status: 400, headers });
       }
     }
 
