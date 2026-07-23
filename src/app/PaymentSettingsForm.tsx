@@ -14,6 +14,7 @@ export default function PaymentSettingsForm({ initialSettings }: { initialSettin
     partial_cod_type: 'percent',
     partial_cod_value: 0,
     use_shopify_checkout_prepaid: false,
+    font_family: 'Inter',
     cashfree_app_id: '',
     cashfree_secret_key: '',
     cashfree_env: 'sandbox'
@@ -165,6 +166,26 @@ export default function PaymentSettingsForm({ initialSettings }: { initialSettin
           </div>
         </div>
       )}
+
+      <div className="pt-4 border-t border-slate-800">
+        <h3 className="text-xl font-bold text-white mb-4">Branding & Typography</h3>
+        <p className="text-sm text-slate-400 mb-6">Customize the look and feel of your checkout modal.</p>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-400 mb-2">Checkout Font Family</label>
+            <select value={settings.font_family || 'Inter'} onChange={(e) => handleChange('font_family', e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white focus:border-yellow-500 outline-none">
+              <option value="Inter">Inter (Default)</option>
+              <option value="Roboto">Roboto</option>
+              <option value="Poppins">Poppins</option>
+              <option value="Montserrat">Montserrat</option>
+              <option value="Outfit">Outfit</option>
+              <option value="Open Sans">Open Sans</option>
+              <option value="Lato">Lato</option>
+            </select>
+          </div>
+        </div>
+      </div>
 
       <div className="pt-4 border-t border-slate-800">
         <h3 className="text-xl font-bold text-white mb-4">Cashfree Integration</h3>
