@@ -146,6 +146,7 @@ export default function WorkflowsForm({ initialSettings }: { initialSettings: an
                   onChange={(e) => handleChange(type, 'delay_minutes', Number(e.target.value))} 
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white focus:border-yellow-500 outline-none"
                 >
+                  <option value={1}>1 Minute (Testing only)</option>
                   <option value={5}>5 Minutes (Testing only)</option>
                   <option value={15}>15 Minutes (Recommended)</option>
                   <option value={30}>30 Minutes</option>
