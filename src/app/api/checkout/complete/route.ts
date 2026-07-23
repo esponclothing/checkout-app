@@ -93,19 +93,49 @@ export async function POST(req: Request) {
     if (existingCustomerId) {
       // ✅ Attach existing customer by ID — NO duplicate created
       draftPayload.customer = { id: existingCustomerId };
+
+      // ─── PATCH: Fill in any missing phone/email/name on the existing customer ──
+      try {
+        const existingCustRes = await fetch(
+          `${formattedUrl}/admin/api/2024-01/customers/${existingCustomerId}.json`,
+          { headers: { 'X-Shopify-Access-Token': shopifyToken } }
+        );
+        if (existingCustRes.ok) {
+          const existingCustData = await existingCustRes.json();
+          const ec = existingCustData.customer || {};
+          const updateFields: any = {};
+
+          // Only update if the field is missing on Shopify side
+          if (!ec.email && email) updateFields.email = email;
+          if (!ec.phone && formattedPhoneForLookup) updateFields.phone = formattedPhoneForLookup;
+          if (!ec.first_name && shipping_address?.first_name) updateFields.first_name = shipping_address.first_name;
+          if (!ec.last_name && shipping_address?.last_name) updateFields.last_name = shipping_address.last_name;
+
+          if (Object.keys(updateFields).length > 0) {
+            await fetch(`${formattedUrl}/admin/api/2024-01/customers/${existingCustomerId}.json`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyToken },
+              body: JSON.stringify({ customer: updateFields })
+            });
+          }
+        }
+      } catch (e) {
+        console.error('Customer profile update error (non-fatal):', e);
+      }
     } else {
-      // 🆕 No existing customer — let Shopify create one (happens max once per customer)
+      // 🆕 No existing customer — create with full data (phone + email + name all included)
       const customerObj: any = {};
       if (email) customerObj.email = email;
       if (formattedPhoneForLookup) customerObj.phone = formattedPhoneForLookup;
-      if (shipping_address.first_name) customerObj.first_name = shipping_address.first_name;
-      if (shipping_address.last_name) customerObj.last_name = shipping_address.last_name;
+      if (shipping_address?.first_name) customerObj.first_name = shipping_address.first_name;
+      if (shipping_address?.last_name) customerObj.last_name = shipping_address.last_name;
       if (Object.keys(customerObj).length > 0) {
         draftPayload.customer = customerObj;
       }
     }
     
     if (email) draftPayload.email = email;
+
 
     // Fetch current draft order to preserve line items and existing discounts
     const getDraftRes = await fetch(`${formattedUrl}/admin/api/2024-01/draft_orders/${draft_order_id}.json`, {

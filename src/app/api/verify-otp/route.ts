@@ -16,7 +16,7 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { phone, otp, signature, device_id, merchant_key } = body;
+    const { phone, otp, signature, device_id, merchant_key, email, first_name, last_name } = body;
     const ipAddress = req.headers.get('x-forwarded-for') || 'unknown';
     const cleanIp = ipAddress.split(',')[0].trim();
 
@@ -84,7 +84,12 @@ export async function POST(req: Request) {
       formattedPhone = '+91' + formattedPhone;
     }
     
-    // Upsert into network_users (so phone exists)
+    // Upsert into network_users with all available profile data
+    const userUpsertData: any = { phone: formattedPhone };
+    if (email) userUpsertData.email = email;
+    if (first_name) userUpsertData.first_name = first_name;
+    if (last_name) userUpsertData.last_name = last_name;
+
     await fetch(`${supabaseUrl}/rest/v1/network_users`, {
       method: 'POST',
       headers: {
@@ -93,7 +98,7 @@ export async function POST(req: Request) {
         'Content-Type': 'application/json',
         'Prefer': 'resolution=merge-duplicates'
       },
-      body: JSON.stringify({ phone: formattedPhone })
+      body: JSON.stringify(userUpsertData)
     });
 
     if (device_id || cleanIp !== 'unknown') {

@@ -35,27 +35,48 @@ async function getDashboardData(merchantId: string) {
   const abandoned = sessions.filter((s: any) => s.status === 'abandoned');
   const completed = sessions.filter((s: any) => s.status === 'completed');
 
-  // 4. Get Customers from Shopify API
-  let customers = [];
+  // 4. Get Customer Count + First Page from Shopify API
+  let customers: any[] = [];
+  let totalCustomerCount: number = 0;
+  let initialNextPageInfo: string | null = null;
+
   try {
     const shopifyUrl = merchant.shopify_store_url;
     const formattedUrl = shopifyUrl.startsWith('http') ? shopifyUrl : `https://${shopifyUrl}`;
     const token = merchant.shopify_access_token || process.env.VITE_SHOPIFY_ACCESS_TOKEN;
+
     if (shopifyUrl && token) {
-      const custRes = await fetch(`${formattedUrl}/admin/api/2024-01/customers.json?limit=250`, {
-        headers: { 'X-Shopify-Access-Token': token },
-        cache: 'no-store'
+      // Fetch real total count
+      const countRes = await fetch(`${formattedUrl}/admin/api/2024-01/customers/count.json`, {
+        headers: { 'X-Shopify-Access-Token': token }, cache: 'no-store'
+      });
+      if (countRes.ok) {
+        const countData = await countRes.json();
+        totalCustomerCount = countData.count || 0;
+      }
+
+      // Fetch first page (50 customers)
+      const custRes = await fetch(`${formattedUrl}/admin/api/2024-01/customers.json?limit=50&order=created_at+desc`, {
+        headers: { 'X-Shopify-Access-Token': token }, cache: 'no-store'
       });
       if (custRes.ok) {
         const cData = await custRes.json();
         customers = cData.customers || [];
+
+        // Parse cursor for next page
+        const linkHeader = custRes.headers.get('link') || '';
+        const links = linkHeader.split(',');
+        for (const link of links) {
+          const match = link.match(/<[^>]*[?&]page_info=([^&>]+)[^>]*>;\s*rel="([^"]+)"/);
+          if (match && match[2] === 'next') initialNextPageInfo = match[1];
+        }
       }
     }
   } catch (err) {
     console.error('Failed to fetch Shopify customers');
   }
 
-  return { merchant, otpLogs, abandoned, completed, customers };
+  return { merchant, otpLogs, abandoned, completed, customers, totalCustomerCount, initialNextPageInfo };
 }
 
 export default async function AdminDashboard(props: { searchParams: Promise<{ tab?: string }> }) {
@@ -119,7 +140,7 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
           <div className="grid grid-cols-4 gap-6 mb-10">
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-sm">
               <p className="text-sm text-slate-400 font-medium mb-1">Total Customers</p>
-              <p className="text-3xl font-bold text-white">{data.customers.length}</p>
+              <p className="text-3xl font-bold text-white">{data.totalCustomerCount || data.customers.length}</p>
             </div>
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-sm">
               <p className="text-sm text-slate-400 font-medium mb-1">Completed Checkouts</p>
@@ -137,7 +158,11 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
         )}
 
         {currentTab === 'customers' && (
-          <CustomersTable initialCustomers={data.customers} />
+          <CustomersTable
+            initialCustomers={data.customers}
+            totalCount={data.totalCustomerCount}
+            initialNextPageInfo={data.initialNextPageInfo}
+          />
         )}
 
         {currentTab === 'abandoned' && (
