@@ -282,7 +282,18 @@ export async function POST(req: Request) {
           const productName = firstItem.title || 'your items';
           const totalAmount = existingDraft.total_price ? `₹${parseFloat(existingDraft.total_price).toFixed(0)}` : 'your items';
           const itemCount = existingDraft.line_items.length;
-          const orderIdStr = completeData.draft_order?.order_id || draft_order_id;
+          let orderIdStr = completeData.draft_order?.order_id || draft_order_id;
+          if (completeData.draft_order?.order_id) {
+            try {
+              const orderRes = await fetch(`${formattedUrl}/admin/api/2024-01/orders/${completeData.draft_order.order_id}.json?fields=name,order_number`, {
+                headers: { 'X-Shopify-Access-Token': shopifyToken }
+              });
+              const orderData = await orderRes.json();
+              if (orderData.order && orderData.order.name) {
+                orderIdStr = orderData.order.name;
+              }
+            } catch(e) {}
+          }
           
           if (workflows.template_name === 'order') {
             dynamicParams.push({ type: 'text', text: customerName });

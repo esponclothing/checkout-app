@@ -211,7 +211,7 @@ export async function POST(req: Request) {
             const totalAmount = `₹${finalTotal.toFixed(0)}`;
             
             const itemCount = order.line_items?.length || 1;
-            const orderIdStr = order.order_number || order.id;
+            const orderIdStr = order.name || order.order_number || order.id;
             
             if (workflows.template_name === 'order') {
               dynamicParams.push({ type: 'text', text: customerName });
