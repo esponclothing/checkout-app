@@ -30,7 +30,7 @@ async function getDashboardData(merchantId: string) {
   const otpLogs = otpRes.ok ? await otpRes.json() : [];
 
   // 3. Get Checkout Sessions (Abandoned vs Completed)
-  const sessionRes = await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?merchant_id=eq.${merchantId}&order=created_at.desc`, { headers, cache: 'no-store' });
+  const sessionRes = await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?merchant_id=eq.${merchantId}&order=updated_at.desc`, { headers, cache: 'no-store' });
   const sessions = sessionRes.ok ? await sessionRes.json() : [];
   
   const abandoned = sessions.filter((s: any) => s.status === 'abandoned');
