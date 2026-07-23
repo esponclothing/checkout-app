@@ -101,7 +101,7 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex">
       {/* Sidebar */}
-      <aside className="w-64 border-r border-slate-800 bg-slate-900 p-6 flex flex-col gap-6 shrink-0 relative">
+      <aside className="w-64 border-r border-slate-800 bg-slate-900 p-6 flex flex-col gap-6 shrink-0 sticky top-0 h-screen">
         <div className="flex items-center gap-3 text-yellow-500 mb-2">
           <ShieldCheck className="w-8 h-8" />
           <h1 className="text-xl font-bold tracking-tight text-white">{data.merchant.name}</h1>
