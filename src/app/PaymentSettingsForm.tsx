@@ -81,6 +81,42 @@ export default function PaymentSettingsForm({ initialSettings }: { initialSettin
         </div>
       </div>
 
+      {/* Address & Checkout Settings */}
+      <div className="pt-4 border-t border-slate-800">
+        <h3 className="text-xl font-bold text-white mb-1">Address & Checkout Settings</h3>
+        <p className="text-slate-400 text-sm mb-4">Control what fields are shown during checkout.</p>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between bg-slate-800/40 rounded-xl p-4 border border-slate-800">
+            <div>
+              <p className="text-slate-200 font-semibold text-sm">Email Address Field</p>
+              <p className="text-slate-500 text-xs mt-0.5">When required, customers must enter their email to proceed.</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="email_mode"
+                  checked={settings.email_required === true}
+                  onChange={() => handleChange('email_required', true)}
+                  className="accent-yellow-500 w-4 h-4"
+                />
+                <span className="text-sm font-semibold text-yellow-400">Required</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="email_mode"
+                  checked={settings.email_required !== true}
+                  onChange={() => handleChange('email_required', false)}
+                  className="accent-slate-400 w-4 h-4"
+                />
+                <span className="text-sm font-semibold text-slate-400">Optional</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-6 pt-4 border-t border-slate-800">
         <div>
           <label className="block text-sm font-medium text-slate-400 mb-2">Additional COD Fee (₹)</label>

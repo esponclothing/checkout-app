@@ -51,15 +51,58 @@ export async function POST(req: Request) {
       use_customer_default_address: false
     };
     
-    // Explicitly link or create the customer in Shopify
-    const customerObj: any = {};
-    if (email) customerObj.email = email;
-    if (phone) customerObj.phone = phone.startsWith('+') ? phone : `+91${phone.replace(/\D/g, '')}`;
-    if (shipping_address.first_name) customerObj.first_name = shipping_address.first_name;
-    if (shipping_address.last_name) customerObj.last_name = shipping_address.last_name;
+    const formattedPhoneForLookup = phone ? (phone.startsWith('+') ? phone : `+91${phone.replace(/\D/g, '')}`) : null;
     
-    if (Object.keys(customerObj).length > 0) {
-      draftPayload.customer = customerObj;
+    // ─── DEDUP: Find existing customer by phone first ────────────────────────
+    let existingCustomerId: number | null = null;
+    if (formattedPhoneForLookup) {
+      try {
+        const searchRes = await fetch(
+          `${formattedUrl}/admin/api/2024-01/customers/search.json?query=phone:${encodeURIComponent(formattedPhoneForLookup)}&limit=1`,
+          { headers: { 'X-Shopify-Access-Token': shopifyToken } }
+        );
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          if (searchData.customers && searchData.customers.length > 0) {
+            existingCustomerId = searchData.customers[0].id;
+          }
+        }
+      } catch (e) {
+        console.error('Customer lookup error:', e);
+      }
+    }
+
+    // Also try lookup by email if phone didn't find anything
+    if (!existingCustomerId && email) {
+      try {
+        const emailSearchRes = await fetch(
+          `${formattedUrl}/admin/api/2024-01/customers/search.json?query=email:${encodeURIComponent(email)}&limit=1`,
+          { headers: { 'X-Shopify-Access-Token': shopifyToken } }
+        );
+        if (emailSearchRes.ok) {
+          const emailSearchData = await emailSearchRes.json();
+          if (emailSearchData.customers && emailSearchData.customers.length > 0) {
+            existingCustomerId = emailSearchData.customers[0].id;
+          }
+        }
+      } catch (e) {
+        console.error('Customer email lookup error:', e);
+      }
+    }
+
+    if (existingCustomerId) {
+      // ✅ Attach existing customer by ID — NO duplicate created
+      draftPayload.customer = { id: existingCustomerId };
+    } else {
+      // 🆕 No existing customer — let Shopify create one (happens max once per customer)
+      const customerObj: any = {};
+      if (email) customerObj.email = email;
+      if (formattedPhoneForLookup) customerObj.phone = formattedPhoneForLookup;
+      if (shipping_address.first_name) customerObj.first_name = shipping_address.first_name;
+      if (shipping_address.last_name) customerObj.last_name = shipping_address.last_name;
+      if (Object.keys(customerObj).length > 0) {
+        draftPayload.customer = customerObj;
+      }
     }
     
     if (email) draftPayload.email = email;

@@ -1,10 +1,35 @@
 "use client";
 
 import React, { useState } from 'react';
-import { ShoppingCart, ChevronDown, ChevronUp, User, Package, IndianRupee } from 'lucide-react';
+import { ShoppingCart, ChevronDown, ChevronUp, User, Package, Trash2, RefreshCw } from 'lucide-react';
 
-export default function AbandonedCartsTable({ abandoned, customers }: { abandoned: any[], customers: any[] }) {
+export default function AbandonedCartsTable({ abandoned: initialAbandoned, customers }: { abandoned: any[], customers: any[] }) {
+  const [abandoned, setAbandoned] = useState<any[]>(initialAbandoned);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+
+  const handleDelete = async (sessionId: string) => {
+    if (confirmId !== sessionId) {
+      setConfirmId(sessionId);
+      return;
+    }
+    setDeletingId(sessionId);
+    setConfirmId(null);
+    try {
+      const res = await fetch(`/api/admin/delete-cart?session_id=${sessionId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        setAbandoned(prev => prev.filter(s => s.id !== sessionId));
+      } else {
+        alert('Delete failed: ' + (data.error || 'Unknown error'));
+      }
+    } catch {
+      alert('Network error during delete');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   if (abandoned.length === 0) {
     return (
@@ -21,6 +46,7 @@ export default function AbandonedCartsTable({ abandoned, customers }: { abandone
     <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden mb-10">
       <div className="p-6 border-b border-slate-800 flex justify-between items-center">
         <h3 className="text-lg font-bold text-white">Abandoned Checkouts</h3>
+        <span className="text-sm text-slate-400"><span className="text-white font-semibold">{abandoned.length}</span> sessions</span>
       </div>
       <table className="w-full text-left border-collapse">
         <thead>
@@ -30,7 +56,8 @@ export default function AbandonedCartsTable({ abandoned, customers }: { abandone
             <th className="p-4 font-medium">Customer Phone</th>
             <th className="p-4 font-medium">Device ID</th>
             <th className="p-4 font-medium">Cart Value</th>
-            <th className="p-4 font-medium">Action</th>
+            <th className="p-4 font-medium">Recovery Link</th>
+            <th className="p-4 font-medium">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -38,14 +65,17 @@ export default function AbandonedCartsTable({ abandoned, customers }: { abandone
             const isExpanded = expandedId === s.id;
             const cartItems = s.cart_details?.items || [];
             const cartTotal = s.cart_details?.total_price ? (s.cart_details.total_price / 100).toFixed(2) : 0;
-            
-            // Try to find the matching customer from Shopify
-            const matchedCustomer = s.phone ? customers.find(c => c.phone?.includes(s.phone.replace('+91','')) || c.default_address?.phone?.includes(s.phone.replace('+91',''))) : null;
+            const matchedCustomer = s.phone
+              ? customers.find(c =>
+                  c.phone?.includes(s.phone.replace('+91', '')) ||
+                  c.default_address?.phone?.includes(s.phone.replace('+91', ''))
+                )
+              : null;
 
             return (
               <React.Fragment key={s.id}>
-                <tr 
-                  className={`border-b border-slate-800/50 hover:bg-slate-800/30 transition cursor-pointer ${isExpanded ? 'bg-slate-800/40' : ''}`}
+                <tr
+                  className={`border-b border-slate-800/50 hover:bg-slate-800/30 transition cursor-pointer group ${isExpanded ? 'bg-slate-800/40' : ''}`}
                   onClick={() => setExpandedId(isExpanded ? null : s.id)}
                 >
                   <td className="p-4 text-slate-500">
@@ -70,13 +100,35 @@ export default function AbandonedCartsTable({ abandoned, customers }: { abandone
                       <span className="text-slate-600 text-sm italic">Pending Sync</span>
                     )}
                   </td>
+                  <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                    {deletingId === s.id ? (
+                      <span className="text-slate-500 text-xs flex items-center gap-1">
+                        <RefreshCw className="w-3 h-3 animate-spin" /> Deleting...
+                      </span>
+                    ) : confirmId === s.id ? (
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => handleDelete(s.id)} className="text-xs px-2.5 py-1.5 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition">
+                          Confirm
+                        </button>
+                        <button onClick={() => setConfirmId(null)} className="text-xs px-2.5 py-1.5 bg-slate-700 text-slate-300 font-bold rounded-lg hover:bg-slate-600 transition">
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => handleDelete(s.id)}
+                        className="opacity-0 group-hover:opacity-100 transition flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 font-semibold"
+                        title="Delete from Database"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                      </button>
+                    )}
+                  </td>
                 </tr>
                 {isExpanded && (
                   <tr className="border-b border-slate-800 bg-slate-900">
-                    <td colSpan={6} className="p-0">
+                    <td colSpan={7} className="p-0">
                       <div className="p-6 bg-slate-950/30 grid grid-cols-2 gap-8">
-                        
-                        {/* Cart Details */}
                         <div>
                           <div className="flex items-center gap-2 text-slate-300 font-semibold mb-4">
                             <Package className="w-4 h-4 text-yellow-500" /> Cart Contents
@@ -99,8 +151,6 @@ export default function AbandonedCartsTable({ abandoned, customers }: { abandone
                             ))}
                           </div>
                         </div>
-
-                        {/* Customer Details */}
                         <div>
                           <div className="flex items-center gap-2 text-slate-300 font-semibold mb-4">
                             <User className="w-4 h-4 text-blue-400" /> Matched Shopify Customer
@@ -131,12 +181,11 @@ export default function AbandonedCartsTable({ abandoned, customers }: { abandone
                           ) : (
                             <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 border-dashed text-center">
                               <User className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-                              <p className="text-sm text-slate-400">No matching customer profile found in Shopify for this phone number.</p>
+                              <p className="text-sm text-slate-400">No matching customer found in Shopify for this phone.</p>
                               <p className="text-xs text-slate-500 mt-1">This might be a new customer.</p>
                             </div>
                           )}
                         </div>
-
                       </div>
                     </td>
                   </tr>

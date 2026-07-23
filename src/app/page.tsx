@@ -1,11 +1,12 @@
-import { LayoutDashboard, Users, Store, Key, ShieldCheck, ShoppingCart, Activity, LogOut, Phone, CreditCard, Palette } from 'lucide-react';
-import Link from 'next/link';
+import { ShieldCheck } from 'lucide-react';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import LogoutButton from './LogoutButton';
 import PaymentSettingsForm from './PaymentSettingsForm';
 import ThemeSettingsForm from './ThemeSettingsForm';
 import AbandonedCartsTable from './AbandonedCartsTable';
+import CustomersTable from './CustomersTable';
+import SidebarNav from './SidebarNav';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,7 +42,7 @@ async function getDashboardData(merchantId: string) {
     const formattedUrl = shopifyUrl.startsWith('http') ? shopifyUrl : `https://${shopifyUrl}`;
     const token = merchant.shopify_access_token || process.env.VITE_SHOPIFY_ACCESS_TOKEN;
     if (shopifyUrl && token) {
-      const custRes = await fetch(`${formattedUrl}/admin/api/2024-01/customers.json?limit=50`, {
+      const custRes = await fetch(`${formattedUrl}/admin/api/2024-01/customers.json?limit=250`, {
         headers: { 'X-Shopify-Access-Token': token },
         cache: 'no-store'
       });
@@ -83,26 +84,7 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
           <ShieldCheck className="w-8 h-8" />
           <h1 className="text-xl font-bold tracking-tight text-white">{data.merchant.name}</h1>
         </div>
-        <nav className="flex flex-col gap-2">
-          <Link href="/?tab=overview" className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold border transition ${currentTab === 'overview' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' : 'text-slate-400 border-transparent hover:text-white hover:bg-slate-800'}`}>
-            <LayoutDashboard className="w-4 h-4" /> Overview
-          </Link>
-          <Link href="/?tab=customers" className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold border transition ${currentTab === 'customers' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' : 'text-slate-400 border-transparent hover:text-white hover:bg-slate-800'}`}>
-            <Users className="w-4 h-4" /> Customers
-          </Link>
-          <Link href="/?tab=abandoned" className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold border transition ${currentTab === 'abandoned' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' : 'text-slate-400 border-transparent hover:text-white hover:bg-slate-800'}`}>
-            <ShoppingCart className="w-4 h-4" /> Abandoned Carts
-          </Link>
-          <Link href="/?tab=otp" className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold border transition ${currentTab === 'otp' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' : 'text-slate-400 border-transparent hover:text-white hover:bg-slate-800'}`}>
-            <Activity className="w-4 h-4" /> OTP Analytics
-          </Link>
-          <Link href="/?tab=payments" className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold border transition ${currentTab === 'payments' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' : 'text-slate-400 border-transparent hover:text-white hover:bg-slate-800'}`}>
-            <CreditCard className="w-4 h-4" /> Payment Settings
-          </Link>
-          <Link href="/?tab=theme" className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold border transition ${currentTab === 'theme' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' : 'text-slate-400 border-transparent hover:text-white hover:bg-slate-800'}`}>
-            <Palette className="w-4 h-4" /> Theme Settings
-          </Link>
-        </nav>
+        <SidebarNav currentTab={currentTab} />
 
         <div className="mt-auto pt-4 border-t border-slate-800">
           <LogoutButton />
@@ -155,40 +137,7 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
         )}
 
         {currentTab === 'customers' && (
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden mb-10">
-            <div className="p-6 border-b border-slate-800">
-              <h3 className="text-lg font-bold text-white">Store Customers</h3>
-            </div>
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-800 text-sm text-slate-400 bg-slate-900/50">
-                  <th className="p-4 font-medium">Name</th>
-                  <th className="p-4 font-medium">Email</th>
-                  <th className="p-4 font-medium">Phone</th>
-                  <th className="p-4 font-medium">Orders</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.customers.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="p-8 text-center text-slate-500">No customers found.</td>
-                  </tr>
-                )}
-                {data.customers.map((c: any) => (
-                  <tr key={c.id} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition">
-                    <td className="p-4 font-semibold text-white">{c.first_name} {c.last_name}</td>
-                    <td className="p-4 text-slate-400">{c.email || 'N/A'}</td>
-                    <td className="p-4 text-slate-400">{c.phone || 'N/A'}</td>
-                    <td className="p-4">
-                      <span className="px-2.5 py-1 bg-slate-800 text-slate-300 rounded-full text-xs font-bold">
-                        {c.orders_count}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <CustomersTable initialCustomers={data.customers} />
         )}
 
         {currentTab === 'abandoned' && (
