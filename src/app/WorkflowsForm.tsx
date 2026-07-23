@@ -24,7 +24,7 @@ export default function WorkflowsForm({ initialSettings }: { initialSettings: an
     delay_minutes: 15,
     header_type: 'image',
     header_text: '',
-    body_text: 'Hi {{customer_name}}, you left the awesome {{product_name}} in your cart! 🏃‍♂️ We\\'re running out of stock fast. Complete your purchase for just {{total_price}} before it\\'s gone! 🛍️'
+    body_text: "Hi {{customer_name}}, you left the awesome {{product_name}} in your cart! 🏃‍♂️ We're running out of stock fast. Complete your purchase for just {{total_price}} before it's gone! 🛍️"
   };
 
   const handleChange = (key: string, value: any) => {
