@@ -83,9 +83,16 @@ export async function POST(req: Request) {
     }
 
     // Update Draft Order in Shopify
+    let newTags = draftOrder.tags ? draftOrder.tags : '';
+    if (payment_method === 'partial_cod') {
+      const advanceTag = `Advance_Paid_${additionalDiscount.toFixed(2)}`;
+      newTags = newTags ? `${newTags}, ${advanceTag}` : advanceTag;
+    }
+
     const updatePayload: any = {
       draft_order: {
         id: draft_order_id,
+        tags: newTags,
         applied_discount: {
           title: discountTitle,
           value: newTotalDiscount.toFixed(2),
@@ -95,7 +102,8 @@ export async function POST(req: Request) {
     };
 
     if (shipping_address) {
-      updatePayload.draft_order.email = customer_email || '';
+      const finalEmail = customer_email || `${customer_phone.replace(/\D/g, '')}@no-email.com`;
+      updatePayload.draft_order.email = finalEmail;
       const shopifyAddress = {
         first_name: shipping_address.first_name || '',
         last_name: shipping_address.last_name || '',
@@ -112,7 +120,7 @@ export async function POST(req: Request) {
       updatePayload.draft_order.billing_address = shopifyAddress;
       
       updatePayload.draft_order.customer = {
-        email: customer_email || '',
+        email: finalEmail,
         first_name: shopifyAddress.first_name,
         last_name: shopifyAddress.last_name,
         phone: customer_phone || ''
