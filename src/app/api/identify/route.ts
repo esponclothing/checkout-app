@@ -33,13 +33,15 @@ export async function POST(req: Request) {
     }
 
     // 1. Verify merchant
-    const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id`, {
+    const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id,payment_settings`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
     const merchants = await merchantRes.json();
     if (!merchants || merchants.length === 0) {
       return NextResponse.json({ error: 'Invalid merchant key' }, { status: 401, headers });
     }
+    
+    const payment_settings = merchants[0].payment_settings || {};
 
     // 2. Try to identify by Device ID
     let phone = null;
@@ -65,7 +67,7 @@ export async function POST(req: Request) {
     }
 
     if (!phone) {
-      return NextResponse.json({ identified: false }, { headers });
+      return NextResponse.json({ identified: false, payment_settings }, { headers });
     }
 
     // We found a phone number, but we ONLY return a masked version for security!
@@ -90,7 +92,8 @@ export async function POST(req: Request) {
     return NextResponse.json({
       identified: true,
       masked_phone: masked,
-      email: email
+      email: email,
+      payment_settings
       // Note: We DO NOT send the address here. Only after OTP.
     }, { headers });
 

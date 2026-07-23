@@ -11,8 +11,8 @@ export async function POST(req: Request) {
 
     const order = await req.json();
 
-    // We only care about orders being created or paid
-    if (topic !== 'orders/create' && topic !== 'orders/paid') {
+    // We only care about orders being created
+    if (topic !== 'orders/create') {
       return NextResponse.json({ success: true, message: 'Ignored topic' });
     }
 
@@ -62,21 +62,16 @@ export async function POST(req: Request) {
       }
     });
 
-    const merchants = await merchantRes.json();
-    let shopifyToken = process.env.VITE_SHOPIFY_ACCESS_TOKEN || '';
-    
-    if (merchants && merchants.length > 0 && merchants[0].shopify_access_token) {
-      shopifyToken = merchants[0].shopify_access_token;
+    const merchantData = await merchantRes.json();
+    if (!merchantData || merchantData.length === 0 || !merchantData[0].shopify_access_token) {
+      return NextResponse.json({ error: 'Merchant not found or no token' }, { status: 404 });
     }
 
-    if (!shopifyToken) {
-      console.error('Webhook Error: Missing Shopify token for domain', cleanStore);
-      return NextResponse.json({ error: 'Missing Shopify token' }, { status: 500 });
-    }
-
+    const accessToken = merchantData[0].shopify_access_token;
     const graphqlUrl = `https://${cleanStore}/admin/api/2024-01/graphql.json`;
+
     const graphqlHeaders = {
-      'X-Shopify-Access-Token': shopifyToken,
+      'X-Shopify-Access-Token': accessToken,
       'Content-Type': 'application/json'
     };
 
@@ -92,6 +87,28 @@ export async function POST(req: Request) {
     };
 
     const orderIdGid = `gid://shopify/Order/${order.id}`;
+
+    // 0. Idempotency Check: Fetch latest order state to ensure we haven't already added it
+    const getOrderRes = await queryShopify(`
+      query getOrder($id: ID!) {
+        order(id: $id) {
+          lineItems(first: 50) {
+            edges {
+              node {
+                title
+              }
+            }
+          }
+        }
+      }
+    `, { id: orderIdGid });
+
+    const hasRemainingItem = getOrderRes.order?.lineItems?.edges?.some((edge: any) => edge.node.title === 'Remaining COD Balance');
+    
+    if (hasRemainingItem) {
+      console.log('Order already has Remaining COD Balance item. Skipping.');
+      return NextResponse.json({ success: true, message: 'Already processed' });
+    }
 
     // 1. Begin Order Edit
     const beginRes = await queryShopify(`
