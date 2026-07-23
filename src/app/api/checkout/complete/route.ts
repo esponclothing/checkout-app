@@ -271,14 +271,21 @@ export async function POST(req: Request) {
           const itemCount = existingDraft.line_items.length;
           const orderIdStr = completeData.draft_order?.order_id || draft_order_id;
           
-          for (const match of matches) {
-            if (match === '{{store_name}}') dynamicParams.push({ type: 'text', text: merchant.name });
-            else if (match === '{{customer_name}}') dynamicParams.push({ type: 'text', text: customerName });
-            else if (match === '{{customer_phone}}') dynamicParams.push({ type: 'text', text: sendPhone });
-            else if (match === '{{product_name}}') dynamicParams.push({ type: 'text', text: productName });
-            else if (match === '{{total_price}}') dynamicParams.push({ type: 'text', text: String(totalAmount) });
-            else if (match === '{{item_count}}') dynamicParams.push({ type: 'text', text: String(itemCount) });
-            else if (match === '{{order_id}}') dynamicParams.push({ type: 'text', text: String(orderIdStr) });
+          if (workflows.template_name === 'order') {
+            dynamicParams.push({ type: 'text', text: customerName });
+            dynamicParams.push({ type: 'text', text: productName });
+            dynamicParams.push({ type: 'text', text: String(totalAmount) });
+            dynamicParams.push({ type: 'text', text: String(orderIdStr) });
+          } else {
+            for (const match of matches) {
+              if (match === '{{store_name}}') dynamicParams.push({ type: 'text', text: merchant.name });
+              else if (match === '{{customer_name}}') dynamicParams.push({ type: 'text', text: customerName });
+              else if (match === '{{customer_phone}}') dynamicParams.push({ type: 'text', text: sendPhone });
+              else if (match === '{{product_name}}') dynamicParams.push({ type: 'text', text: productName });
+              else if (match === '{{total_price}}') dynamicParams.push({ type: 'text', text: String(totalAmount) });
+              else if (match === '{{item_count}}') dynamicParams.push({ type: 'text', text: String(itemCount) });
+              else if (match === '{{order_id}}') dynamicParams.push({ type: 'text', text: String(orderIdStr) });
+            }
           }
 
           const components: any[] = [];
