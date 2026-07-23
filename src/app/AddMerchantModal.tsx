@@ -48,6 +48,10 @@ export default function AddMerchantModal() {
                 <input name="domain" type="text" placeholder="e.g. 11fit.in" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-yellow-500" />
               </div>
               <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">Owner Phone (For Login)</label>
+                <input required name="ownerPhone" type="tel" placeholder="+91 98765 43210" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-yellow-500" />
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-slate-400 mb-1">Shopify Store URL</label>
                 <input required name="storeUrl" type="url" placeholder="https://store.myshopify.com" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-yellow-500" />
               </div>

@@ -7,6 +7,7 @@ export async function addMerchant(formData: FormData) {
   const domain = formData.get('domain') as string;
   const storeUrl = formData.get('storeUrl') as string;
   const token = formData.get('token') as string;
+  const ownerPhone = formData.get('ownerPhone') as string;
 
   if (!name) throw new Error("Name is required");
 
@@ -29,7 +30,8 @@ export async function addMerchant(formData: FormData) {
       domain,
       shopify_store_url: storeUrl,
       shopify_access_token: token,
-      api_key: apiKey
+      api_key: apiKey,
+      owner_phone: ownerPhone || null
     })
   });
 
