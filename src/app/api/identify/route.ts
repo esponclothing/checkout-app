@@ -55,16 +55,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // 3. Try to identify by IP Address (Fallback)
-    if (!phone && cleanIp !== 'unknown') {
-      const ipRes = await fetch(`${supabaseUrl}/rest/v1/network_devices?ip_address=eq.${cleanIp}&select=phone&order=created_at.desc&limit=1`, {
-        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
-      });
-      const ipDevices = await ipRes.json();
-      if (ipDevices && ipDevices.length > 0) {
-        phone = ipDevices[0].phone;
-      }
-    }
+    // 3. Removed IP Address Fallback due to NAT collisions
 
     if (!phone) {
       return NextResponse.json({ identified: false, payment_settings }, { headers });
