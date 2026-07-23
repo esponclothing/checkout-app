@@ -51,6 +51,43 @@ export async function GET(req: Request) {
         let sendPhone = session.phone.replace(/\D/g, '');
         if (sendPhone.length === 10) sendPhone = '91' + sendPhone;
 
+        // Dynamic Variable Mapping
+        let bodyText = workflows.body_text || '';
+        let dynamicParams: any[] = [];
+        
+        const regex = /{{[a-z_]+}}/g;
+        const matches = bodyText.match(regex) || [];
+        
+        for (const match of matches) {
+          if (match === '{{store_name}}') {
+            dynamicParams.push({ type: 'text', text: merchant.name });
+          } else if (match === '{{customer_phone}}') {
+            dynamicParams.push({ type: 'text', text: sendPhone });
+          } else if (match === '{{product_name}}') {
+            dynamicParams.push({ type: 'text', text: productName });
+          } else if (match === '{{total_price}}') {
+            dynamicParams.push({ type: 'text', text: String(totalAmount) });
+          } else if (match === '{{item_count}}') {
+            dynamicParams.push({ type: 'text', text: String(cart.items.length) });
+          }
+        }
+
+        const components: any[] = [];
+        
+        if (workflows.header_type === 'image') {
+          components.push({
+            type: 'header',
+            parameters: [ { type: 'image', image: { link: productImageUrl } } ]
+          });
+        }
+
+        if (dynamicParams.length > 0) {
+          components.push({
+            type: 'body',
+            parameters: dynamicParams
+          });
+        }
+
         // 3. Send WhatsApp via Meta
         const waResponse = await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
           method: 'POST',
@@ -66,22 +103,7 @@ export async function GET(req: Request) {
             template: {
               name: workflows.template_name,
               language: { code: 'en' },
-              components: [
-                {
-                  type: 'header',
-                  parameters: [
-                    { type: 'image', image: { link: productImageUrl } }
-                  ]
-                },
-                {
-                  type: 'body',
-                  parameters: [
-                    { type: 'text', text: merchant.name }, // {{1}}
-                    { type: 'text', text: productName },    // {{2}}
-                    { type: 'text', text: String(totalAmount) } // {{3}}
-                  ]
-                }
-              ]
+              components: components
             }
           })
         });
