@@ -24,6 +24,19 @@ export async function POST(req: Request) {
     const supabaseUrl = process.env.SUPABASE_URL || '';
     const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
+    let actualPhone = body.phone;
+    if (actualPhone === 'MASKED' && body.device_id) {
+      try {
+        const dRes = await fetch(`${supabaseUrl}/rest/v1/network_devices?device_id=eq.${body.device_id}&select=phone`, {
+          headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+        });
+        const dData = await dRes.json();
+        if (dData && dData.length > 0) {
+          actualPhone = dData[0].phone;
+        }
+      } catch (e) {}
+    }
+
     // Fetch merchant Shopify keys
     const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
@@ -39,7 +52,7 @@ export async function POST(req: Request) {
     const shopifyToken = merchant.shopify_access_token || process.env.VITE_SHOPIFY_ACCESS_TOKEN;
 
     // Make sure shipping address has the phone number strictly mapped!
-    const formattedPhone = phone ? (phone.startsWith('+') ? phone : `+91${phone.replace(/\D/g, '')}`) : undefined;
+    const formattedPhone = actualPhone && actualPhone !== 'MASKED' ? (actualPhone.startsWith('+') ? actualPhone : `+91${actualPhone.replace(/\D/g, '')}`) : undefined;
     
     if (formattedPhone) shipping_address.phone = formattedPhone;
     
@@ -51,7 +64,7 @@ export async function POST(req: Request) {
       use_customer_default_address: false
     };
     
-    const formattedPhoneForLookup = phone ? (phone.startsWith('+') ? phone : `+91${phone.replace(/\D/g, '')}`) : null;
+    const formattedPhoneForLookup = actualPhone && actualPhone !== 'MASKED' ? (actualPhone.startsWith('+') ? actualPhone : `+91${actualPhone.replace(/\D/g, '')}`) : null;
     
     // ─── DEDUP: Find existing customer by phone first ────────────────────────
     let existingCustomerId: number | null = null;
@@ -252,9 +265,9 @@ export async function POST(req: Request) {
       (async () => {
         try {
           const workflows = merchant.payment_settings.wa_workflows.order_confirmation;
-          if (!workflows.template_name || !phone) return;
+          if (!workflows.template_name || !actualPhone || actualPhone === 'MASKED') return;
 
-          let sendPhone = phone.replace(/\D/g, '');
+          let sendPhone = actualPhone.replace(/\D/g, '');
           if (sendPhone.length === 10) sendPhone = '91' + sendPhone;
           
           const META_TOKEN = process.env.META_ACCESS_TOKEN || 'EAAM99yhroGsBR1rm4kaPOHQRtcuoMjZAdpcz2F4K1AXjYYfvtGLwttdBMO2fdaUI4lzB0fG0iaZAabFdgP9aA4GCXtw0t4zLmwZBg0ShVCJBZBYZBVYnmGkb2f9XZAXcD9evV1hoAcF9DGfSYtTCfTzzcC9iZCmWZBTiyMZC4ZBnmvOVqPfE1ZCJE3Lc3ZBs3egltQZDZD';
