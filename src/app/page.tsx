@@ -1,9 +1,10 @@
-import { LayoutDashboard, Users, Store, Key, ShieldCheck, ShoppingCart, Activity, LogOut, Phone, CreditCard } from 'lucide-react';
+import { LayoutDashboard, Users, Store, Key, ShieldCheck, ShoppingCart, Activity, LogOut, Phone, CreditCard, Palette } from 'lucide-react';
 import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import LogoutButton from './LogoutButton';
 import PaymentSettingsForm from './PaymentSettingsForm';
+import ThemeSettingsForm from './ThemeSettingsForm';
 import AbandonedCartsTable from './AbandonedCartsTable';
 
 export const dynamic = 'force-dynamic';
@@ -98,6 +99,9 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
           <Link href="/?tab=payments" className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold border transition ${currentTab === 'payments' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' : 'text-slate-400 border-transparent hover:text-white hover:bg-slate-800'}`}>
             <CreditCard className="w-4 h-4" /> Payment Settings
           </Link>
+          <Link href="/?tab=theme" className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold border transition ${currentTab === 'theme' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' : 'text-slate-400 border-transparent hover:text-white hover:bg-slate-800'}`}>
+            <Palette className="w-4 h-4" /> Theme Settings
+          </Link>
         </nav>
 
         <div className="mt-auto pt-4 border-t border-slate-800">
@@ -115,6 +119,7 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
               {currentTab === 'abandoned' && 'Abandoned Checkouts'}
               {currentTab === 'otp' && 'OTP Analytics'}
               {currentTab === 'payments' && 'Payment Settings'}
+              {currentTab === 'theme' && 'Theme Settings'}
             </h2>
             <p className="text-slate-400">Manage your store analytics & recovery</p>
           </div>
@@ -122,6 +127,10 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
 
         {currentTab === 'payments' && (
           <PaymentSettingsForm initialSettings={data.merchant.payment_settings} />
+        )}
+
+        {currentTab === 'theme' && (
+          <ThemeSettingsForm initialSettings={data.merchant.payment_settings} />
         )}
 
         {currentTab === 'overview' && (

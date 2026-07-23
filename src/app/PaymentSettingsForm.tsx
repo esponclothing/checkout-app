@@ -45,21 +45,6 @@ export default function PaymentSettingsForm({ initialSettings }: { initialSettin
     }
   };
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 200 * 1024) {
-      alert("Logo file size must be under 200KB.");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      handleChange('logo_url', reader.result);
-    };
-    reader.readAsDataURL(file);
-  };
 
   return (
     <form onSubmit={handleSave} className="bg-slate-900 border border-slate-800 rounded-2xl p-8 max-w-4xl space-y-8">
@@ -69,47 +54,8 @@ export default function PaymentSettingsForm({ initialSettings }: { initialSettin
         </div>
       )}
 
-      {/* Store Branding */}
-      <div>
-        <h3 className="text-xl font-bold text-white mb-4">Store Branding</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-slate-400 mb-2">Checkout Theme Color</label>
-            <div className="flex items-center gap-3">
-              <input 
-                type="color" 
-                value={settings.theme_color || '#0F172A'} 
-                onChange={(e) => handleChange('theme_color', e.target.value)}
-                className="w-10 h-10 rounded border-0 cursor-pointer bg-transparent p-0"
-              />
-              <span className="text-slate-300 font-mono text-sm uppercase">{settings.theme_color || '#0F172A'}</span>
-            </div>
-            <p className="text-xs text-slate-500 mt-2">This color will be used for buttons and highlights in the checkout modal.</p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-400 mb-2">Store Logo (Max 200KB, 250x250 recommended)</label>
-            <div className="flex items-center gap-4">
-              {settings.logo_url && (
-                <div className="w-16 h-16 bg-white rounded-lg flex items-center justify-center p-2 border border-slate-700">
-                  <img src={settings.logo_url} alt="Logo" className="max-w-full max-h-full object-contain" />
-                </div>
-              )}
-              <div className="flex-1">
-                <input 
-                  type="file" 
-                  accept="image/png, image/jpeg, image/svg+xml"
-                  onChange={handleLogoUpload}
-                  className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-yellow-500/10 file:text-yellow-500 hover:file:bg-yellow-500/20 cursor-pointer"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
 
-      <div className="border-t border-slate-800"></div>
-
-      {/* Toggles */}
+      {/* Payment Methods */}
       <div>
         <h3 className="text-xl font-bold text-white mb-4">Payment Methods</h3>
         <div className="space-y-4">
