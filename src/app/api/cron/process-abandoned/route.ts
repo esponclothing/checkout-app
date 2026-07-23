@@ -92,6 +92,24 @@ export async function GET(req: Request) {
           });
         }
 
+        if (session.invoice_url) {
+          try {
+            const url = new URL(session.invoice_url);
+            // Meta dynamic URL variables usually append to a base URL.
+            // We pass the path and query string as the variable.
+            components.push({
+              type: 'button',
+              sub_type: 'url',
+              index: '0',
+              parameters: [
+                { type: 'text', text: (url.pathname + url.search).substring(1) } // remove leading slash if any
+              ]
+            });
+          } catch (e) {
+            console.error('Failed to parse invoice_url for button mapping', e);
+          }
+        }
+
         // 3. Send WhatsApp via Meta
         const waResponse = await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
           method: 'POST',
