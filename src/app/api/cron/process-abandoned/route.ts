@@ -19,7 +19,13 @@ export async function GET(req: Request) {
     let processedCount = 0;
 
     for (const merchant of merchants) {
-      const workflows = merchant.payment_settings?.wa_workflows;
+      let workflows = merchant.payment_settings?.wa_workflows?.abandoned_cart;
+      
+      // Fallback for legacy format before multi-workflow update
+      if (merchant.payment_settings?.wa_workflows?.enabled !== undefined && !merchant.payment_settings?.wa_workflows?.abandoned_cart) {
+        workflows = merchant.payment_settings.wa_workflows;
+      }
+
       if (!workflows || workflows.enabled !== true || !workflows.template_name) continue;
 
       const delayMins = workflows.delay_minutes || 15;
