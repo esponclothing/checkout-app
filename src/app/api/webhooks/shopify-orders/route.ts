@@ -55,7 +55,7 @@ export async function POST(req: Request) {
 
     let cleanStore = shopDomain.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
     
-    const merchantRes = await fetch(`${SUPABASE_URL}/rest/v1/saas_merchants?shopify_store_url=eq.${cleanStore}&select=shopify_access_token`, {
+    const merchantRes = await fetch(`${SUPABASE_URL}/rest/v1/saas_merchants?shopify_store_url=eq.${cleanStore}&select=shopify_access_token,payment_settings,name`, {
       headers: {
         'apikey': SUPABASE_KEY,
         'Authorization': `Bearer ${SUPABASE_KEY}`
@@ -182,6 +182,98 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Failed to commit edit' }, { status: 500 });
     } else {
       console.log(`Successfully appended remaining balance to order ${order.id}`);
+      
+      // TRIGGER WHATSAPP CONFIRMATION HERE FOR PARTIAL COD
+      const merchant = merchantData[0];
+      if (merchant.payment_settings?.wa_workflows?.order_confirmation?.enabled) {
+        (async () => {
+          try {
+            const workflows = merchant.payment_settings.wa_workflows.order_confirmation;
+            const phone = order.customer?.phone || order.phone || order.shipping_address?.phone;
+            if (!workflows.template_name || !phone) return;
+
+            let sendPhone = phone.replace(/\D/g, '');
+            if (sendPhone.length === 10) sendPhone = '91' + sendPhone;
+            
+            const META_TOKEN = process.env.META_ACCESS_TOKEN || 'EAAM99yhroGsBR1rm4kaPOHQRtcuoMjZAdpcz2F4K1AXjYYfvtGLwttdBMO2fdaUI4lzB0fG0iaZAabFdgP9aA4GCXtw0t4zLmwZBg0ShVCJBZBYZBVYnmGkb2f9XZAXcD9evV1hoAcF9DGfSYtTCfTzzcC9iZCmWZBTiyMZC4ZBnmvOVqPfE1ZCJE3Lc3ZBs3egltQZDZD';
+            const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID || '1189183190949431';
+            
+            let dynamicParams: any[] = [];
+            const regex = /{{[a-z_]+}}/g;
+            const matches = workflows.body_text?.match(regex) || [];
+            
+            const customerName = order.customer?.first_name || order.shipping_address?.first_name || 'there';
+            const firstItem = order.line_items?.[0] || {};
+            const productName = firstItem.title || 'your items';
+            
+            // Re-calculate the final total since we just edited the order
+            const finalTotal = parseFloat(order.total_price) + remainingAmount;
+            const totalAmount = `₹${finalTotal.toFixed(0)}`;
+            
+            const itemCount = order.line_items?.length || 1;
+            const orderIdStr = order.order_number || order.id;
+            
+            if (workflows.template_name === 'order') {
+              dynamicParams.push({ type: 'text', text: customerName });
+              dynamicParams.push({ type: 'text', text: productName });
+              dynamicParams.push({ type: 'text', text: totalAmount });
+              dynamicParams.push({ type: 'text', text: String(orderIdStr) });
+            } else {
+              for (const match of matches) {
+                if (match === '{{store_name}}') dynamicParams.push({ type: 'text', text: merchant.name });
+                else if (match === '{{customer_name}}') dynamicParams.push({ type: 'text', text: customerName });
+                else if (match === '{{customer_phone}}') dynamicParams.push({ type: 'text', text: sendPhone });
+                else if (match === '{{product_name}}') dynamicParams.push({ type: 'text', text: productName });
+                else if (match === '{{total_price}}') dynamicParams.push({ type: 'text', text: String(totalAmount) });
+                else if (match === '{{item_count}}') dynamicParams.push({ type: 'text', text: String(itemCount) });
+                else if (match === '{{order_id}}') dynamicParams.push({ type: 'text', text: String(orderIdStr) });
+              }
+            }
+
+            const components: any[] = [];
+            if (dynamicParams.length > 0) {
+              components.push({ type: 'body', parameters: dynamicParams });
+            }
+            
+            const orderStatusUrl = order.order_status_url;
+            if (workflows.button_url_enabled && orderStatusUrl) {
+              try {
+                const urlObj = new URL(orderStatusUrl);
+                const dynamicPath = (urlObj.pathname + urlObj.search).substring(1);
+                components.push({
+                  type: 'button',
+                  sub_type: 'url',
+                  index: '0',
+                  parameters: [ { type: 'text', text: dynamicPath } ]
+                });
+              } catch(e){}
+            }
+
+            const payload = {
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: sendPhone,
+              type: 'template',
+              template: {
+                name: workflows.template_name,
+                language: { code: 'en' },
+                components
+              }
+            };
+            
+            await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${META_TOKEN}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(payload)
+            });
+            console.log('Fired WhatsApp confirmation for partial COD order');
+          } catch(e) { console.error('WA Partial COD confirmation error:', e); }
+        })();
+      }
+      
       return NextResponse.json({ success: true, message: 'Successfully added remaining balance' });
     }
 

@@ -248,7 +248,7 @@ export async function POST(req: Request) {
     }
 
     // 4. Trigger Order Confirmation WhatsApp (Non-blocking)
-    if (merchant.payment_settings?.wa_workflows?.order_confirmation?.enabled) {
+    if (merchant.payment_settings?.wa_workflows?.order_confirmation?.enabled && body.payment_method !== 'partial_cod') {
       (async () => {
         try {
           const workflows = merchant.payment_settings.wa_workflows.order_confirmation;
