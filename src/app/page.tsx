@@ -7,6 +7,7 @@ import ThemeSettingsForm from './ThemeSettingsForm';
 import AbandonedCartsTable from './AbandonedCartsTable';
 import CustomersTable from './CustomersTable';
 import SidebarNav from './SidebarNav';
+import WorkflowsForm from './WorkflowsForm';
 
 export const dynamic = 'force-dynamic';
 
@@ -121,6 +122,7 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
               {currentTab === 'customers' && 'Store Customers'}
               {currentTab === 'abandoned' && 'Abandoned Checkouts'}
               {currentTab === 'otp' && 'OTP Analytics'}
+              {currentTab === 'workflows' && 'Automated Workflows'}
               {currentTab === 'payments' && 'Payment Settings'}
               {currentTab === 'theme' && 'Theme Settings'}
             </h2>
@@ -134,6 +136,10 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
 
         {currentTab === 'theme' && (
           <ThemeSettingsForm initialSettings={data.merchant.payment_settings} />
+        )}
+
+        {currentTab === 'workflows' && (
+          <WorkflowsForm initialSettings={data.merchant.payment_settings} />
         )}
 
         {currentTab === 'overview' && (
