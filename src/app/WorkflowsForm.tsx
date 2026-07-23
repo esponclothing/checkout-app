@@ -5,6 +5,7 @@ import { Copy, PlusCircle } from 'lucide-react';
 
 const AVAILABLE_VARIABLES = [
   '{{store_name}}',
+  '{{customer_name}}',
   '{{customer_phone}}',
   '{{product_name}}',
   '{{total_price}}',
@@ -23,7 +24,7 @@ export default function WorkflowsForm({ initialSettings }: { initialSettings: an
     delay_minutes: 15,
     header_type: 'image',
     header_text: '',
-    body_text: 'Hi {{customer_phone}}, you left {{product_name}} in your cart! Complete your purchase for {{total_price}}.'
+    body_text: 'Hi {{customer_name}}, you left the awesome {{product_name}} in your cart! 🏃‍♂️ We\\'re running out of stock fast. Complete your purchase for just {{total_price}} before it\\'s gone! 🛍️'
   };
 
   const handleChange = (key: string, value: any) => {

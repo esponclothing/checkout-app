@@ -51,6 +51,8 @@ export async function GET(req: Request) {
         let sendPhone = session.phone.replace(/\D/g, '');
         if (sendPhone.length === 10) sendPhone = '91' + sendPhone;
 
+        const customerName = cart.shipping_address?.first_name || cart.billing_address?.first_name || 'there';
+
         // Dynamic Variable Mapping
         let bodyText = workflows.body_text || '';
         let dynamicParams: any[] = [];
@@ -61,6 +63,8 @@ export async function GET(req: Request) {
         for (const match of matches) {
           if (match === '{{store_name}}') {
             dynamicParams.push({ type: 'text', text: merchant.name });
+          } else if (match === '{{customer_name}}') {
+            dynamicParams.push({ type: 'text', text: customerName });
           } else if (match === '{{customer_phone}}') {
             dynamicParams.push({ type: 'text', text: sendPhone });
           } else if (match === '{{product_name}}') {
