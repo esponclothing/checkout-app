@@ -31,8 +31,46 @@ export async function POST(req: Request) {
       const res = await fetch(`${supabaseUrl}/rest/v1/network_addresses?phone=eq.${encodeURIComponent(phone)}&order=created_at.desc`, {
         headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
       });
-      const addresses = await res.json();
-      return NextResponse.json({ success: true, addresses }, { headers });
+      const localAddresses = await res.json() || [];
+
+      let shopifyAddresses: any[] = [];
+      try {
+        const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=shopify_store_url,shopify_access_token`, {
+          headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+        });
+        const merchants = await merchantRes.json();
+        if (merchants && merchants.length > 0) {
+          const { shopify_store_url, shopify_access_token } = merchants[0];
+          let formattedUrl = shopify_store_url.startsWith('http') ? shopify_store_url : `https://${shopify_store_url}`;
+          const cleanPhone = phone.startsWith('+') ? phone : `+91${phone.replace(/\D/g, '')}`;
+          const searchRes = await fetch(`${formattedUrl}/admin/api/2024-01/customers/search.json?query=phone:${encodeURIComponent(cleanPhone)}&limit=1`, {
+            headers: { 'X-Shopify-Access-Token': shopify_access_token, 'Content-Type': 'application/json' }
+          });
+          const searchData = await searchRes.json();
+          if (searchData.customers && searchData.customers.length > 0) {
+            const cust = searchData.customers[0];
+            if (cust.addresses && cust.addresses.length > 0) {
+              shopifyAddresses = cust.addresses.map((a: any) => ({
+                id: `shopify_${a.id}`,
+                first_name: a.first_name,
+                last_name: a.last_name,
+                address1: a.address1,
+                address2: a.address2,
+                city: a.city,
+                province: a.province,
+                zip: a.zip,
+                country: a.country,
+                phone: a.phone,
+                company: a.company
+              }));
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Shopify fetch addresses error', e);
+      }
+
+      return NextResponse.json({ success: true, addresses: [...shopifyAddresses, ...localAddresses] }, { headers });
     }
 
     // Add new address

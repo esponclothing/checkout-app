@@ -119,12 +119,34 @@ export async function POST(req: Request) {
       updatePayload.draft_order.shipping_address = shopifyAddress;
       updatePayload.draft_order.billing_address = shopifyAddress;
       
-      updatePayload.draft_order.customer = {
-        email: finalEmail,
-        first_name: shopifyAddress.first_name,
-        last_name: shopifyAddress.last_name,
-        phone: customer_phone || ''
-      };
+      // Look up existing customer to avoid duplicates
+      let existingCustId = null;
+      const cleanPhoneForSearch = customer_phone ? (customer_phone.startsWith('+') ? customer_phone : `+91${customer_phone.replace(/\D/g, '')}`) : null;
+      if (cleanPhoneForSearch) {
+        try {
+          const sRes = await fetch(`${formattedUrl}/admin/api/2024-01/customers/search.json?query=phone:${encodeURIComponent(cleanPhoneForSearch)}&limit=1`, { headers: { 'X-Shopify-Access-Token': shopifyToken } });
+          const sData = await sRes.json();
+          if (sData.customers && sData.customers.length > 0) existingCustId = sData.customers[0].id;
+        } catch(e) {}
+      }
+      if (!existingCustId && finalEmail && !finalEmail.includes('@no-email.com')) {
+        try {
+          const sRes = await fetch(`${formattedUrl}/admin/api/2024-01/customers/search.json?query=email:${encodeURIComponent(finalEmail)}&limit=1`, { headers: { 'X-Shopify-Access-Token': shopifyToken } });
+          const sData = await sRes.json();
+          if (sData.customers && sData.customers.length > 0) existingCustId = sData.customers[0].id;
+        } catch(e) {}
+      }
+
+      if (existingCustId) {
+        updatePayload.draft_order.customer = { id: existingCustId };
+      } else {
+        updatePayload.draft_order.customer = {
+          email: finalEmail,
+          first_name: shopifyAddress.first_name,
+          last_name: shopifyAddress.last_name,
+          phone: customer_phone || ''
+        };
+      }
     }
 
     const updateRes = await fetch(`${formattedUrl}/admin/api/2024-01/draft_orders/${draft_order_id}.json`, {
