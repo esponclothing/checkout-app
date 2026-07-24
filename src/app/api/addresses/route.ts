@@ -23,13 +23,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers });
     }
 
+    const formattedPhone = phone.startsWith('+') ? phone : `+91${phone.replace(/\D/g, '')}`;
+
     const supabaseUrl = process.env.SUPABASE_URL || '';
     const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
     // Fetch existing addresses
     if (action === 'FETCH') {
-      const res = await fetch(`${supabaseUrl}/rest/v1/network_addresses?phone=eq.${encodeURIComponent(phone)}&order=created_at.desc`, {
-        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+      const res = await fetch(`${supabaseUrl}/rest/v1/network_addresses?phone=eq.${encodeURIComponent(formattedPhone)}&order=created_at.desc`, {
+        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
+        cache: 'no-store'
       });
       const localAddresses = await res.json() || [];
 
@@ -42,9 +45,9 @@ export async function POST(req: Request) {
         if (merchants && merchants.length > 0) {
           const { shopify_store_url, shopify_access_token } = merchants[0];
           let formattedUrl = shopify_store_url.startsWith('http') ? shopify_store_url : `https://${shopify_store_url}`;
-          const cleanPhone = phone.startsWith('+') ? phone : `+91${phone.replace(/\D/g, '')}`;
-          const searchRes = await fetch(`${formattedUrl}/admin/api/2024-01/customers/search.json?query=phone:${encodeURIComponent(cleanPhone)}&limit=1`, {
-            headers: { 'X-Shopify-Access-Token': shopify_access_token, 'Content-Type': 'application/json' }
+          const searchRes = await fetch(`${formattedUrl}/admin/api/2024-01/customers/search.json?query=phone:${encodeURIComponent(formattedPhone)}&limit=1`, {
+            headers: { 'X-Shopify-Access-Token': shopify_access_token, 'Content-Type': 'application/json' },
+            cache: 'no-store'
           });
           const searchData = await searchRes.json();
           if (searchData.customers && searchData.customers.length > 0) {
@@ -87,10 +90,15 @@ export async function POST(req: Request) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          phone: phone,
+          phone: formattedPhone,
           ...cleanAddressData
         })
       });
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error('Supabase insert failed:', errText);
+        return NextResponse.json({ success: false, error: errText }, { status: 400, headers });
+      }
       return NextResponse.json({ success: true }, { headers });
     }
 
