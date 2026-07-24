@@ -124,24 +124,47 @@ export async function POST(req: Request) {
     const phone = body.phone || null;
 
     if (supabaseUrl && supabaseKey) {
-      await fetch(`${supabaseUrl}/rest/v1/checkout_sessions`, {
-        method: 'POST',
-        headers: { 
-          'apikey': supabaseKey, 
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal'
-        },
-        body: JSON.stringify({
-          merchant_id: merchant.id,
-          phone: phone,
-          device_id: deviceId,
-          draft_order_id: shopifyData.draft_order.id.toString(),
-          invoice_url: shopifyData.draft_order.invoice_url,
-          cart_details: raw_cart || items,
-          status: 'abandoned'
-        })
+      const checkRes = await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?device_id=eq.${deviceId}&status=eq.abandoned&order=updated_at.desc&limit=1`, {
+        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
       });
+      const existing = await checkRes.json();
+
+      if (existing && existing.length > 0) {
+        await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?id=eq.${existing[0].id}`, {
+          method: 'PATCH',
+          headers: { 
+            'apikey': supabaseKey, 
+            'Authorization': `Bearer ${supabaseKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            phone: phone || existing[0].phone,
+            draft_order_id: shopifyData.draft_order.id.toString(),
+            invoice_url: shopifyData.draft_order.invoice_url,
+            cart_details: raw_cart || items,
+            updated_at: new Date().toISOString()
+          })
+        });
+      } else {
+        await fetch(`${supabaseUrl}/rest/v1/checkout_sessions`, {
+          method: 'POST',
+          headers: { 
+            'apikey': supabaseKey, 
+            'Authorization': `Bearer ${supabaseKey}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal'
+          },
+          body: JSON.stringify({
+            merchant_id: merchant.id,
+            phone: phone,
+            device_id: deviceId,
+            draft_order_id: shopifyData.draft_order.id.toString(),
+            invoice_url: shopifyData.draft_order.invoice_url,
+            cart_details: raw_cart || items,
+            status: 'abandoned'
+          })
+        });
+      }
     }
 
     // Return the calculated totals back to our Headless App

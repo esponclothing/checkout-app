@@ -158,6 +158,26 @@ export async function POST(req: Request) {
           status: 'sent'
         })
       });
+
+      // 6. IMMEDIATELY map the phone number to the checkout session
+      if (device_id) {
+        // Find existing session
+        const sessionRes = await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?device_id=eq.${device_id}&status=eq.abandoned&order=updated_at.desc&limit=1`, {
+          headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+        });
+        const existingSession = await sessionRes.json();
+        if (existingSession && existingSession.length > 0) {
+          await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?id=eq.${existingSession[0].id}`, {
+            method: 'PATCH',
+            headers: { 
+              'apikey': supabaseKey, 
+              'Authorization': `Bearer ${supabaseKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ phone: resolvedPhone, updated_at: new Date().toISOString() })
+          });
+        }
+      }
     }
 
     return NextResponse.json({ success: true, signature: fullSignature, real_phone: resolvedPhone }, { headers });
