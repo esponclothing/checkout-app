@@ -75,6 +75,10 @@ export async function POST(req: Request) {
 
     // Add new address
     if (action === 'ADD') {
+      const cleanAddressData = { ...address_data };
+      delete cleanAddressData.email;
+      delete cleanAddressData.company;
+
       const res = await fetch(`${supabaseUrl}/rest/v1/network_addresses`, {
         method: 'POST',
         headers: {
@@ -84,7 +88,7 @@ export async function POST(req: Request) {
         },
         body: JSON.stringify({
           phone: phone,
-          ...address_data
+          ...cleanAddressData
         })
       });
       return NextResponse.json({ success: true }, { headers });
@@ -140,6 +144,10 @@ export async function POST(req: Request) {
         }
         return NextResponse.json({ success: true }, { headers });
       } else {
+        const cleanUpdateData = { ...updateData };
+        delete cleanUpdateData.email;
+        delete cleanUpdateData.company;
+
         const res = await fetch(`${supabaseUrl}/rest/v1/network_addresses?id=eq.${id}&phone=eq.${encodeURIComponent(phone)}`, {
           method: 'PATCH',
           headers: {
@@ -147,7 +155,7 @@ export async function POST(req: Request) {
             'Authorization': `Bearer ${supabaseKey}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(updateData)
+          body: JSON.stringify(cleanUpdateData)
         });
         if (!res.ok) {
           const errorText = await res.text();
