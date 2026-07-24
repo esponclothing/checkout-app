@@ -113,7 +113,8 @@ export async function POST(req: Request) {
         province: shipping_address.province || '',
         country: shipping_address.country || 'India',
         zip: shipping_address.zip || '',
-        phone: customer_phone || ''
+        phone: customer_phone || '',
+        company: shipping_address.company || ''
       };
       
       updatePayload.draft_order.shipping_address = shopifyAddress;
