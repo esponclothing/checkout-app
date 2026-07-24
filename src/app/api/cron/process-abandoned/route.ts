@@ -29,7 +29,7 @@ export async function GET(req: Request) {
 
       if (!workflows || workflows.enabled !== true || !workflows.template_name) continue;
 
-      const delayMins = workflows.delay_minutes || 15;
+      const delayMins = 15; // Enforce exactly 15 minutes
       const cutoffTime = new Date(Date.now() - delayMins * 60000).toISOString();
 
       // 2. Find eligible abandoned carts
@@ -99,13 +99,7 @@ export async function GET(req: Request) {
           });
         }
 
-        let buttonParam = 'cart'; // Default for abandoned carts
-        if (session.invoice_url) {
-          try {
-            const url = new URL(session.invoice_url);
-            buttonParam = (url.pathname + url.search).substring(1);
-          } catch(e) {}
-        }
+        let buttonParam = 'cart'; // Force cart link so completion is tracked properly via the app
         
         components.push({
           type: 'button',
