@@ -56,6 +56,20 @@ export async function POST(req: Request) {
     
     if (formattedPhone) shipping_address.phone = formattedPhone;
     
+    let finalAddress2 = shipping_address.address2 || '';
+    let finalCompany = shipping_address.company || '';
+    
+    if (finalAddress2.includes('District: ')) {
+      const parts = finalAddress2.split(/\s*\|?\s*District:\s*/);
+      if (parts.length > 1) {
+          finalAddress2 = parts[0].trim();
+          finalCompany = parts[1].trim();
+      }
+    }
+    
+    shipping_address.address2 = finalAddress2;
+    shipping_address.company = finalCompany;
+
     // 1. Update Draft Order with Shipping Address and Email
     const draftPayload: any = {
       id: draft_order_id,
