@@ -107,11 +107,12 @@ export async function POST(req: Request) {
         const merchants = await merchantRes.json();
         if (!merchants || merchants.length === 0) return NextResponse.json({ error: 'Invalid merchant' }, { status: 401, headers });
         const { shopify_store_url, shopify_access_token } = merchants[0];
+        const finalToken = shopify_access_token || process.env.VITE_SHOPIFY_ACCESS_TOKEN;
 
         // 2. Find Shopify customer by phone
         const cleanPhone = phone.startsWith('+') ? phone : `+91${phone.replace(/\D/g, '')}`;
         const searchRes = await fetch(`https://${shopify_store_url}/admin/api/2024-01/customers/search.json?query=phone:${encodeURIComponent(cleanPhone)}`, {
-          headers: { 'X-Shopify-Access-Token': shopify_access_token, 'Content-Type': 'application/json' }
+          headers: { 'X-Shopify-Access-Token': finalToken, 'Content-Type': 'application/json' }
         });
         const searchData = await searchRes.json();
         
@@ -133,7 +134,7 @@ export async function POST(req: Request) {
           
           await fetch(`https://${shopify_store_url}/admin/api/2024-01/customers/${customerId}/addresses/${shopifyAddressId}.json`, {
             method: 'PUT',
-            headers: { 'X-Shopify-Access-Token': shopify_access_token, 'Content-Type': 'application/json' },
+            headers: { 'X-Shopify-Access-Token': finalToken, 'Content-Type': 'application/json' },
             body: JSON.stringify(shopifyPayload)
           });
         }
@@ -173,11 +174,12 @@ export async function POST(req: Request) {
         const merchants = await merchantRes.json();
         if (!merchants || merchants.length === 0) return NextResponse.json({ error: 'Invalid merchant' }, { status: 401, headers });
         const { shopify_store_url, shopify_access_token } = merchants[0];
+        const finalToken = shopify_access_token || process.env.VITE_SHOPIFY_ACCESS_TOKEN;
 
         // 2. Find Shopify customer by phone
         const cleanPhone = phone.startsWith('+') ? phone : `+91${phone.replace(/\D/g, '')}`;
         const searchRes = await fetch(`https://${shopify_store_url}/admin/api/2024-01/customers/search.json?query=phone:${encodeURIComponent(cleanPhone)}`, {
-          headers: { 'X-Shopify-Access-Token': shopify_access_token, 'Content-Type': 'application/json' }
+          headers: { 'X-Shopify-Access-Token': finalToken, 'Content-Type': 'application/json' }
         });
         const searchData = await searchRes.json();
         
@@ -186,7 +188,7 @@ export async function POST(req: Request) {
           // 3. Delete from Shopify
           await fetch(`https://${shopify_store_url}/admin/api/2024-01/customers/${customerId}/addresses/${shopifyAddressId}.json`, {
             method: 'DELETE',
-            headers: { 'X-Shopify-Access-Token': shopify_access_token }
+            headers: { 'X-Shopify-Access-Token': finalToken }
           });
         }
         return NextResponse.json({ success: true }, { headers });
