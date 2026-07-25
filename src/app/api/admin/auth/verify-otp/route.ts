@@ -37,24 +37,18 @@ export async function POST(req: Request) {
 
     // 2. Find ALL merchants this phone has access to (owner OR in admin_phones)
     let merchants: any[] = [];
+    const rawQueryPhone = queryPhone.replace(/\D/g, '');
+    
+    const orQuery = `owner_phone.eq.${queryPhone},owner_phone.eq.${rawQueryPhone},admin_phones.cs.{"${queryPhone}"},admin_phones.cs.{"${rawQueryPhone}"}`;
+    const encodedOr = encodeURIComponent(orQuery);
 
-    // Try array-contains query first
     try {
-      const arrayRes = await fetch(
-        `${supabaseUrl}/rest/v1/saas_merchants?or=(owner_phone.eq.${encodeURIComponent(queryPhone)},admin_phones.cs.{"${queryPhone}"})&select=id,name,shopify_store_url`,
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/saas_merchants?or=(${encodedOr})&select=id,name,shopify_store_url,is_active`,
         { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
       );
-      if (arrayRes.ok) merchants = await arrayRes.json();
+      if (res.ok) merchants = await res.json();
     } catch(e) {}
-
-    // Fallback: plain owner_phone lookup
-    if (!merchants || merchants.length === 0) {
-      const ownerRes = await fetch(
-        `${supabaseUrl}/rest/v1/saas_merchants?owner_phone=eq.${encodeURIComponent(queryPhone)}&select=id,name,shopify_store_url`,
-        { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
-      );
-      if (ownerRes.ok) merchants = await ownerRes.json();
-    }
 
     if (!merchants || merchants.length === 0) {
       return NextResponse.json({ error: 'Merchant not found.' }, { status: 403 });

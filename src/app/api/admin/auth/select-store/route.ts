@@ -20,24 +20,19 @@ export async function POST(req: Request) {
 
     // Validate that this merchant_id actually belongs to the verified phone
     let valid = false;
+    const rawQueryPhone = verifiedPhone.replace(/\D/g, '');
+    
+    const orQuery = `owner_phone.eq.${verifiedPhone},owner_phone.eq.${rawQueryPhone},admin_phones.cs.{"${verifiedPhone}"},admin_phones.cs.{"${rawQueryPhone}"}`;
+    const encodedOr = encodeURIComponent(orQuery);
+
     try {
       const res = await fetch(
-        `${supabaseUrl}/rest/v1/saas_merchants?id=eq.${merchant_id}&or=(owner_phone.eq.${encodeURIComponent(verifiedPhone)},admin_phones.cs.{"${verifiedPhone}"})&select=id`,
+        `${supabaseUrl}/rest/v1/saas_merchants?id=eq.${merchant_id}&or=(${encodedOr})&select=id`,
         { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
       );
       const data = await res.json();
       if (data && data.length > 0) valid = true;
     } catch(e) {}
-
-    // Fallback: plain owner check
-    if (!valid) {
-      const res = await fetch(
-        `${supabaseUrl}/rest/v1/saas_merchants?id=eq.${merchant_id}&owner_phone=eq.${encodeURIComponent(verifiedPhone)}&select=id`,
-        { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
-      );
-      const data = await res.json();
-      if (data && data.length > 0) valid = true;
-    }
 
     if (!valid) {
       return NextResponse.json({ error: 'Unauthorized: merchant does not belong to this account.' }, { status: 403 });

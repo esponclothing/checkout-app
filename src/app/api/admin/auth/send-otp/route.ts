@@ -25,21 +25,18 @@ export async function POST(req: Request) {
 
     // Check if phone is an owner or admin of any merchant (with array-contains fallback)
     let merchants: any[] = [];
-    try {
-      const arrayRes = await fetch(
-        `${supabaseUrl}/rest/v1/saas_merchants?or=(owner_phone.eq.${encodeURIComponent(queryPhone)},admin_phones.cs.{"${queryPhone}"})&select=id,payment_settings`,
-        { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
-      );
-      if (arrayRes.ok) merchants = await arrayRes.json();
-    } catch(e) {}
+    const rawQueryPhone = queryPhone.replace(/\D/g, '');
+    
+    const orQuery = `owner_phone.eq.${queryPhone},owner_phone.eq.${rawQueryPhone},admin_phones.cs.{"${queryPhone}"},admin_phones.cs.{"${rawQueryPhone}"}`;
+    const encodedOr = encodeURIComponent(orQuery);
 
-    if (!merchants || merchants.length === 0) {
-      const ownerRes = await fetch(
-        `${supabaseUrl}/rest/v1/saas_merchants?owner_phone=eq.${encodeURIComponent(queryPhone)}&select=id,payment_settings`,
+    try {
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/saas_merchants?or=(${encodedOr})&select=id,payment_settings,is_active`,
         { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
       );
-      if (ownerRes.ok) merchants = await ownerRes.json();
-    }
+      if (res.ok) merchants = await res.json();
+    } catch(e) {}
 
     if (!merchants || merchants.length === 0) {
       return NextResponse.json({ error: 'This number is not registered as a store owner.' }, { status: 403 });
