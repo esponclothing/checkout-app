@@ -51,20 +51,22 @@ export default function AddMerchantModal() {
     let totalSynced = 0;
 
     try {
+      let response: Response;
+      let responseData: any;
       do {
-        const res = await fetch('/api/admin/super/sync-customers', {
+        response = await fetch('/api/admin/super/sync-customers', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ merchant_id: merchantId, page_info: pageInfo })
         });
-        const data = await res.json();
+        responseData = await response.json();
         
-        if (data.success) {
-          totalSynced += data.count;
-          pageInfo = data.nextPageInfo;
+        if (responseData.success) {
+          totalSynced += responseData.count;
+          pageInfo = responseData.nextPageInfo;
           setSyncStatus({ active: true, message: `Synced ${totalSynced} customers so far...` });
         } else {
-          setSyncStatus({ active: true, message: `Sync failed: ${data.error}` });
+          setSyncStatus({ active: true, message: `Sync failed: ${responseData.error}` });
           setTimeout(() => setSyncStatus({ active: false, message: '' }), 5000);
           return;
         }
