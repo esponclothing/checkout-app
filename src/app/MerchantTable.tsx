@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 
 import {
   Edit2, X, Save, Power, PowerOff, Eye, EyeOff,
-  Phone, Plus, Trash2, Copy, Check, Store, Key, Globe, FileCode
+  Phone, Plus, Trash2, Copy, Check, Store, Key, Globe, FileCode, Wifi
 } from 'lucide-react';
 import { masterLiquid } from './master-liquid';
 
@@ -46,6 +46,9 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
   const [showToken, setShowToken] = useState<{ [k: string]: boolean }>({});
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [setupMerchant, setSetupMerchant] = useState<Merchant | null>(null);
+  
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [testStatus, setTestStatus] = useState<{ id: string, type: 'success' | 'error', msg: string } | null>(null);
 
   useEffect(() => {
     setMerchants(initial);
@@ -189,6 +192,31 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
       alert(e.message);
     } finally {
       setTogglingId(null);
+    }
+  };
+
+  const handleTestConnection = async (m: Merchant) => {
+    setTestingId(m.id);
+    setTestStatus(null);
+    try {
+      const res = await fetch('/api/admin/super/test-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shopify_store_url: m.shopify_store_url, shopify_access_token: m.shopify_access_token })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTestStatus({ id: m.id, type: 'success', msg: `Connected successfully to: ${data.shop}` });
+        setTimeout(() => setTestStatus(null), 5000);
+      } else {
+        setTestStatus({ id: m.id, type: 'error', msg: data.error || 'Connection failed' });
+        setTimeout(() => setTestStatus(null), 8000);
+      }
+    } catch (e: any) {
+      setTestStatus({ id: m.id, type: 'error', msg: e.message || 'Network error' });
+      setTimeout(() => setTestStatus(null), 8000);
+    } finally {
+      setTestingId(null);
     }
   };
 
@@ -506,19 +534,46 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
 
                   {/* Actions */}
                   <td className="px-6 py-4">
-                    <div className="flex gap-2">
+                    <div className="flex flex-col gap-2 relative">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => openEdit(m)}
+                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 hover:border-slate-600 transition flex-1"
+                        >
+                          <Edit2 className="w-3 h-3" /> Edit
+                        </button>
+                        <button
+                          onClick={() => setSetupMerchant(m)}
+                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-lg border border-emerald-500/20 transition flex-1"
+                        >
+                          <FileCode className="w-3 h-3" /> Setup
+                        </button>
+                      </div>
+                      
                       <button
-                        onClick={() => openEdit(m)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 hover:border-slate-600 transition"
+                        onClick={() => handleTestConnection(m)}
+                        disabled={testingId === m.id}
+                        className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg border border-blue-500/20 transition disabled:opacity-50"
                       >
-                        <Edit2 className="w-3 h-3" /> Edit
+                        {testingId === m.id ? (
+                          <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <circle cx="12" cy="12" r="10" strokeOpacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10"/>
+                          </svg>
+                        ) : (
+                          <Wifi className="w-3 h-3" />
+                        )}
+                        {testingId === m.id ? 'Testing...' : 'Test Connection'}
                       </button>
-                      <button
-                        onClick={() => setSetupMerchant(m)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-lg border border-emerald-500/20 transition"
-                      >
-                        <FileCode className="w-3 h-3" /> Setup
-                      </button>
+                      
+                      {testStatus && testStatus.id === m.id && (
+                        <div className={`absolute top-full left-0 mt-2 p-2 rounded-lg text-xs border z-10 min-w-[200px] shadow-xl animate-in fade-in slide-in-from-top-2 ${
+                          testStatus.type === 'success' 
+                            ? 'bg-green-500/10 text-green-400 border-green-500/20' 
+                            : 'bg-red-500/10 text-red-400 border-red-500/20'
+                        }`}>
+                          {testStatus.msg}
+                        </div>
+                      )}
                     </div>
                   </td>
                 </tr>
