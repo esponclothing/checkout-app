@@ -29,68 +29,7 @@ function CopyBtn({ value }: { value: string }) {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const downloadLiquid = (m: Merchant) => {
-    const customizedLiquid = masterLiquid.replace(/{{MERCHANT_API_KEY}}/g, m.api_key);
-    const blob = new Blob([customizedLiquid], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'whatsapp-otp-modal.liquid';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
 
-  const getThemeCodeSnippet = (m: Merchant) => `{% render 'whatsapp-otp-modal' %}
-
-<script>
-(function() {
-  const WA_API_BASE = 'https://checkout-app-one-lilac.vercel.app/api';
-  const MERCHANT_KEY = '${m.api_key}';
-  let waDeviceId = localStorage.getItem('wa_device_id');
-  if (!waDeviceId) {
-    waDeviceId = 'dev_' + Math.random().toString(36).substr(2, 9) + Date.now();
-    localStorage.setItem('wa_device_id', waDeviceId);
-  }
-  fetch(\`\${WA_API_BASE}/identify\`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ merchant_key: MERCHANT_KEY, device_id: waDeviceId })
-  }).catch(()=>{});
-
-  async function trackCartSilently() {
-    try {
-      const cartRes = await fetch('/cart.js');
-      const cart = await cartRes.json();
-      
-      const cartHash = cart.items ? cart.items.map(i => i.id + '-' + i.quantity).join('|') : '';
-      const lastHash = sessionStorage.getItem('last_tracked_cart');
-      if (lastHash === cartHash) return; 
-      sessionStorage.setItem('last_tracked_cart', cartHash);
-
-      const utmData = JSON.parse(localStorage.getItem('wa_utm_data') || '{}');
-      await fetch(\`\${WA_API_BASE}/checkout/track-cart\`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ merchant_key: MERCHANT_KEY, device_id: waDeviceId, cart_details: { ...cart, utm_data: utmData } })
-      });
-    } catch(e) {}
-  }
-
-  const originalFetch = window.fetch;
-  window.fetch = async function() {
-    const response = await originalFetch.apply(this, arguments);
-    const url = arguments[0];
-    if (typeof url === 'string' && (url.includes('/cart/change') || url.includes('/cart/add') || url.includes('/cart/update'))) {
-      setTimeout(trackCartSilently, 400); 
-    }
-    return response;
-  };
-  
-  setTimeout(trackCartSilently, 1500);
-})();
-</script>`;
 
   return (
     <button onClick={copy} className="ml-1 text-slate-500 hover:text-slate-300 transition">
@@ -141,19 +80,24 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
   };
 
   const downloadLiquid = (m: Merchant) => {
+    const safeStoreName = m.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const snippetName = `tinkal-x-${safeStoreName}-checkout`;
     const customizedLiquid = masterLiquid.replace(/{{MERCHANT_API_KEY}}/g, m.api_key);
     const blob = new Blob([customizedLiquid], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'whatsapp-otp-modal.liquid';
+    a.download = `${snippetName}.liquid`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
-  const getThemeCodeSnippet = (m: Merchant) => `{% render 'whatsapp-otp-modal' %}
+  const getThemeCodeSnippet = (m: Merchant) => {
+    const safeStoreName = m.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const snippetName = `tinkal-x-${safeStoreName}-checkout`;
+    return `{% render '${snippetName}' %}
 
 <script>
 (function() {
@@ -418,7 +362,7 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
                       className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-lg text-sm transition flex items-center gap-2"
                     >
                       <FileCode className="w-4 h-4" />
-                      Download whatsapp-otp-modal.liquid
+                      Download {`tinkal-x-${setupMerchant.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-checkout.liquid`}
                     </button>
                   </div>
                 </div>
@@ -434,7 +378,7 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
                     <li>Navigate to <strong>Online Store</strong> &gt; <strong>Themes</strong>.</li>
                     <li>Click the <strong>...</strong> next to the active theme and select <strong>Edit code</strong>.</li>
                     <li>Under the <strong>Snippets</strong> folder, click <strong>Add a new snippet</strong>.</li>
-                    <li>Name it exactly <code className="bg-slate-950 px-1.5 py-0.5 rounded text-emerald-300">whatsapp-otp-modal</code>.</li>
+                    <li>Name it exactly <code className="bg-slate-950 px-1.5 py-0.5 rounded text-emerald-300">{`tinkal-x-${setupMerchant.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-checkout`}</code>.</li>
                     <li>Open the file you downloaded in Step 1, copy all contents, and paste it into this new snippet. Save the snippet.</li>
                   </ul>
                 </div>
