@@ -56,11 +56,14 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
 
   const openEdit = (m: Merchant) => {
     setEditId(m.id);
-    setEditData(m);
+    setEditData({ ...m });
+    setEditTestStatus({ type: null, msg: '' });
   };
+
   const closeEdit = () => {
     setEditId(null);
     setEditData({});
+    setEditTestStatus({ type: null, msg: '' });
   };
 
   const addAdminPhone = () =>
@@ -220,6 +223,31 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
     }
   };
 
+  const [editTestStatus, setEditTestStatus] = useState<{ type: 'success' | 'error' | 'loading' | null, msg: string }>({ type: null, msg: '' });
+
+  const handleTestEditConnection = async () => {
+    if (!editData.shopify_store_url || !editData.shopify_access_token) {
+      setEditTestStatus({ type: 'error', msg: 'Please enter both Store URL and API Token.' });
+      return;
+    }
+    setEditTestStatus({ type: 'loading', msg: 'Testing connection...' });
+    try {
+      const res = await fetch('/api/admin/super/test-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shopify_store_url: editData.shopify_store_url, shopify_access_token: editData.shopify_access_token })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setEditTestStatus({ type: 'success', msg: `Connected successfully to: ${data.shop}` });
+      } else {
+        setEditTestStatus({ type: 'error', msg: data.error || 'Connection failed' });
+      }
+    } catch (e: any) {
+      setEditTestStatus({ type: 'error', msg: e.message || 'Network error' });
+    }
+  };
+
   const editingMerchant = merchants.find(m => m.id === editId);
 
   return (
@@ -325,7 +353,24 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
                     className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 transition shrink-0 self-center">
                     {showToken[editId] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
+                  <button
+                    type="button"
+                    onClick={handleTestEditConnection}
+                    disabled={editTestStatus.type === 'loading'}
+                    className="px-4 py-2.5 h-10 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition whitespace-nowrap self-center"
+                  >
+                    {editTestStatus.type === 'loading' ? 'Testing...' : 'Test Connection'}
+                  </button>
                 </div>
+                {editTestStatus.type && (
+                  <div className={`mt-2 text-xs p-2 rounded-lg ${
+                    editTestStatus.type === 'success' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
+                    editTestStatus.type === 'error' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                    'text-slate-400'
+                  }`}>
+                    {editTestStatus.msg}
+                  </div>
+                )}
               </div>
 
               <div>
