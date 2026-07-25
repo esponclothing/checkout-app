@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import {
   Edit2, X, Save, Power, PowerOff, Eye, EyeOff,
-  Phone, Plus, Trash2, Copy, Check, Store, Key, Globe
+  Phone, Plus, Trash2, Copy, Check, Store, Key, Globe, FileCode
 } from 'lucide-react';
+import { masterLiquid } from './master-liquid';
 
 interface Merchant {
   id: string;
@@ -26,6 +26,70 @@ function CopyBtn({ value }: { value: string }) {
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
+
+  const downloadLiquid = (m: Merchant) => {
+    const customizedLiquid = masterLiquid.replace(/{{MERCHANT_API_KEY}}/g, m.api_key);
+    const blob = new Blob([customizedLiquid], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'whatsapp-otp-modal.liquid';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const getThemeCodeSnippet = (m: Merchant) => `{% render 'whatsapp-otp-modal' %}
+
+<script>
+(function() {
+  const WA_API_BASE = 'https://checkout-app-one-lilac.vercel.app/api';
+  const MERCHANT_KEY = '${m.api_key}';
+  let waDeviceId = localStorage.getItem('wa_device_id');
+  if (!waDeviceId) {
+    waDeviceId = 'dev_' + Math.random().toString(36).substr(2, 9) + Date.now();
+    localStorage.setItem('wa_device_id', waDeviceId);
+  }
+  fetch(\`\${WA_API_BASE}/identify\`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ merchant_key: MERCHANT_KEY, device_id: waDeviceId })
+  }).catch(()=>{});
+
+  async function trackCartSilently() {
+    try {
+      const cartRes = await fetch('/cart.js');
+      const cart = await cartRes.json();
+      
+      const cartHash = cart.items ? cart.items.map(i => i.id + '-' + i.quantity).join('|') : '';
+      const lastHash = sessionStorage.getItem('last_tracked_cart');
+      if (lastHash === cartHash) return; 
+      sessionStorage.setItem('last_tracked_cart', cartHash);
+
+      const utmData = JSON.parse(localStorage.getItem('wa_utm_data') || '{}');
+      await fetch(\`\${WA_API_BASE}/checkout/track-cart\`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ merchant_key: MERCHANT_KEY, device_id: waDeviceId, cart_details: { ...cart, utm_data: utmData } })
+      });
+    } catch(e) {}
+  }
+
+  const originalFetch = window.fetch;
+  window.fetch = async function() {
+    const response = await originalFetch.apply(this, arguments);
+    const url = arguments[0];
+    if (typeof url === 'string' && (url.includes('/cart/change') || url.includes('/cart/add') || url.includes('/cart/update'))) {
+      setTimeout(trackCartSilently, 400); 
+    }
+    return response;
+  };
+  
+  setTimeout(trackCartSilently, 1500);
+})();
+</script>`;
+
   return (
     <button onClick={copy} className="ml-1 text-slate-500 hover:text-slate-300 transition">
       {copied ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
@@ -40,6 +104,8 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
   const [saving, setSaving] = useState(false);
   const [showToken, setShowToken] = useState<{ [k: string]: boolean }>({});
   const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  const [setupMerchant, setSetupMerchant] = useState<Merchant | null>(null);
 
   useEffect(() => {
     setMerchants(initial);
@@ -71,6 +137,69 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
     if (num.length === 12 && num.startsWith('91')) return '+' + num;
     return p;
   };
+
+  const downloadLiquid = (m: Merchant) => {
+    const customizedLiquid = masterLiquid.replace(/{{MERCHANT_API_KEY}}/g, m.api_key);
+    const blob = new Blob([customizedLiquid], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'whatsapp-otp-modal.liquid';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const getThemeCodeSnippet = (m: Merchant) => `{% render 'whatsapp-otp-modal' %}
+
+<script>
+(function() {
+  const WA_API_BASE = 'https://checkout-app-one-lilac.vercel.app/api';
+  const MERCHANT_KEY = '${m.api_key}';
+  let waDeviceId = localStorage.getItem('wa_device_id');
+  if (!waDeviceId) {
+    waDeviceId = 'dev_' + Math.random().toString(36).substr(2, 9) + Date.now();
+    localStorage.setItem('wa_device_id', waDeviceId);
+  }
+  fetch(\`\${WA_API_BASE}/identify\`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ merchant_key: MERCHANT_KEY, device_id: waDeviceId })
+  }).catch(()=>{});
+
+  async function trackCartSilently() {
+    try {
+      const cartRes = await fetch('/cart.js');
+      const cart = await cartRes.json();
+      
+      const cartHash = cart.items ? cart.items.map(i => i.id + '-' + i.quantity).join('|') : '';
+      const lastHash = sessionStorage.getItem('last_tracked_cart');
+      if (lastHash === cartHash) return; 
+      sessionStorage.setItem('last_tracked_cart', cartHash);
+
+      const utmData = JSON.parse(localStorage.getItem('wa_utm_data') || '{}');
+      await fetch(\`\${WA_API_BASE}/checkout/track-cart\`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ merchant_key: MERCHANT_KEY, device_id: waDeviceId, cart_details: { ...cart, utm_data: utmData } })
+      });
+    } catch(e) {}
+  }
+
+  const originalFetch = window.fetch;
+  window.fetch = async function() {
+    const response = await originalFetch.apply(this, arguments);
+    const url = arguments[0];
+    if (typeof url === 'string' && (url.includes('/cart/change') || url.includes('/cart/add') || url.includes('/cart/update'))) {
+      setTimeout(trackCartSilently, 400); 
+    }
+    return response;
+  };
+  
+  setTimeout(trackCartSilently, 1500);
+})();
+</script>`;
 
   const saveEdit = async () => {
     if (!editId) return;
@@ -128,11 +257,8 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
       {/* Edit Drawer */}
       {editId && editingMerchant && (
         <div className="fixed inset-0 z-50 flex">
-          {/* Backdrop */}
           <div className="flex-1 bg-slate-950/70 backdrop-blur-sm" onClick={closeEdit} />
-          {/* Panel */}
           <div className="w-full max-w-lg bg-slate-900 border-l border-slate-800 h-full overflow-y-auto flex flex-col shadow-2xl">
-            {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-slate-800 sticky top-0 bg-slate-900 z-10">
               <div>
                 <h2 className="text-lg font-bold text-white">Edit Merchant</h2>
@@ -143,10 +269,7 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
               </button>
             </div>
 
-            {/* Body */}
             <div className="flex-1 p-6 space-y-5">
-
-              {/* Access Toggle */}
               <div className={`flex items-center justify-between p-4 rounded-xl border ${editingMerchant.is_active ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'}`}>
                 <div>
                   <p className="font-semibold text-white text-sm">Store Access</p>
@@ -167,28 +290,24 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
                 </button>
               </div>
 
-              {/* Name */}
               <div>
                 <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider flex items-center gap-1"><Store className="w-3 h-3" /> Store Name</label>
                 <input value={editData.name || ''} onChange={e => setEditData(d => ({ ...d, name: e.target.value }))}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-yellow-500 transition text-sm" />
               </div>
 
-              {/* Domain */}
               <div>
                 <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider flex items-center gap-1"><Globe className="w-3 h-3" /> Domain</label>
                 <input value={editData.domain || ''} onChange={e => setEditData(d => ({ ...d, domain: e.target.value }))}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-yellow-500 transition text-sm" />
               </div>
 
-              {/* Owner Phone */}
               <div>
                 <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider flex items-center gap-1"><Phone className="w-3 h-3" /> Owner Phone</label>
                 <input value={editData.owner_phone || ''} onChange={e => setEditData(d => ({ ...d, owner_phone: e.target.value }))}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-yellow-500 transition text-sm" />
               </div>
 
-              {/* Admin Phones */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1"><Phone className="w-3 h-3" /> Additional Admin Numbers</label>
@@ -217,14 +336,12 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
                 </div>
               </div>
 
-              {/* Shopify Store URL */}
               <div>
                 <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Shopify Store URL</label>
                 <input value={editData.shopify_store_url || ''} onChange={e => setEditData(d => ({ ...d, shopify_store_url: e.target.value }))}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-yellow-500 transition text-sm" />
               </div>
 
-              {/* Shopify Token */}
               <div>
                 <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider flex items-center gap-1"><Key className="w-3 h-3" /> Shopify Admin Token</label>
                 <div className="flex gap-2">
@@ -241,7 +358,6 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
                 </div>
               </div>
 
-              {/* API Key (read-only) */}
               <div>
                 <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Merchant API Key (read-only)</label>
                 <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5">
@@ -251,7 +367,6 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
               </div>
             </div>
 
-            {/* Footer */}
             <div className="p-6 border-t border-slate-800 flex gap-3 sticky bottom-0 bg-slate-900">
               <button onClick={closeEdit} className="flex-1 py-2.5 rounded-xl border border-slate-700 text-slate-400 hover:text-white hover:border-slate-600 transition font-semibold text-sm">
                 Cancel
@@ -261,6 +376,98 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
                 <Save className="w-4 h-4" />
                 {saving ? 'Saving...' : 'Save Changes'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Setup Guide Modal */}
+      {setupMerchant && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center p-5 border-b border-slate-800 bg-slate-900/50">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <FileCode className="w-5 h-5 text-emerald-400" />
+                  Theme Setup Guide
+                </h3>
+                <p className="text-sm text-slate-400 mt-1">Installation instructions for {setupMerchant.name}</p>
+              </div>
+              <button onClick={() => setSetupMerchant(null)} className="text-slate-400 hover:text-white p-2 hover:bg-slate-800 rounded-xl transition">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto custom-scrollbar">
+              <div className="space-y-6">
+                
+                {/* Step 1 */}
+                <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-sm">1</div>
+                    <h4 className="text-white font-semibold text-base">Download the pre-configured Liquid File</h4>
+                  </div>
+                  <p className="text-slate-400 text-sm mb-4 ml-11">
+                    Click the button below to download the master liquid snippet. It already has the API keys injected for <strong>{setupMerchant.name}</strong>.
+                  </p>
+                  <div className="ml-11">
+                    <button
+                      onClick={() => downloadLiquid(setupMerchant)}
+                      className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-lg text-sm transition flex items-center gap-2"
+                    >
+                      <FileCode className="w-4 h-4" />
+                      Download whatsapp-otp-modal.liquid
+                    </button>
+                  </div>
+                </div>
+
+                {/* Step 2 */}
+                <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-sm">2</div>
+                    <h4 className="text-white font-semibold text-base">Upload to Shopify Snippets</h4>
+                  </div>
+                  <ul className="text-slate-400 text-sm space-y-2 ml-11 list-disc pl-4">
+                    <li>Go to the client's Shopify Admin panel.</li>
+                    <li>Navigate to <strong>Online Store</strong> &gt; <strong>Themes</strong>.</li>
+                    <li>Click the <strong>...</strong> next to the active theme and select <strong>Edit code</strong>.</li>
+                    <li>Under the <strong>Snippets</strong> folder, click <strong>Add a new snippet</strong>.</li>
+                    <li>Name it exactly <code className="bg-slate-950 px-1.5 py-0.5 rounded text-emerald-300">whatsapp-otp-modal</code>.</li>
+                    <li>Open the file you downloaded in Step 1, copy all contents, and paste it into this new snippet. Save the snippet.</li>
+                  </ul>
+                </div>
+
+                {/* Step 3 */}
+                <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-sm">3</div>
+                    <h4 className="text-white font-semibold text-base">Initialize in theme.liquid</h4>
+                  </div>
+                  <p className="text-slate-400 text-sm mb-3 ml-11">
+                    Open <strong>layout/theme.liquid</strong>. Scroll to the very bottom, and paste the following code right before the closing <code className="bg-slate-950 px-1.5 py-0.5 rounded text-slate-300">&lt;/body&gt;</code> tag:
+                  </p>
+                  
+                  <div className="ml-11 relative">
+                    <pre className="bg-slate-950 p-4 rounded-xl text-xs text-emerald-300/90 overflow-x-auto border border-slate-800">
+                      <code>{getThemeCodeSnippet(setupMerchant)}</code>
+                    </pre>
+                    <button
+                      onClick={(e) => {
+                        navigator.clipboard.writeText(getThemeCodeSnippet(setupMerchant));
+                        const target = e.currentTarget as HTMLButtonElement;
+                        const original = target.innerHTML;
+                        target.innerHTML = '<svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+                        setTimeout(() => target.innerHTML = original, 2000);
+                      }}
+                      className="absolute top-3 right-3 p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-400 transition"
+                      title="Copy code"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+              </div>
             </div>
           </div>
         </div>
@@ -357,12 +564,20 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
 
                   {/* Actions */}
                   <td className="px-6 py-4">
-                    <button
-                      onClick={() => openEdit(m)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 hover:border-slate-600 transition"
-                    >
-                      <Edit2 className="w-3 h-3" /> Edit
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => openEdit(m)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 hover:border-slate-600 transition"
+                      >
+                        <Edit2 className="w-3 h-3" /> Edit
+                      </button>
+                      <button
+                        onClick={() => setSetupMerchant(m)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-lg border border-emerald-500/20 transition"
+                      >
+                        <FileCode className="w-3 h-3" /> Setup
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
