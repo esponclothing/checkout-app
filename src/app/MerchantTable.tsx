@@ -1,5 +1,7 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+
 import {
   Edit2, X, Save, Power, PowerOff, Eye, EyeOff,
   Phone, Plus, Trash2, Copy, Check, Store, Key, Globe, FileCode
