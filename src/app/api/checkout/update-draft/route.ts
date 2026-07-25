@@ -104,17 +104,28 @@ export async function POST(req: Request) {
     if (shipping_address) {
       const finalEmail = customer_email || `${customer_phone.replace(/\D/g, '')}@no-email.com`;
       updatePayload.draft_order.email = finalEmail;
+      let finalAddress2 = shipping_address.address2 || '';
+      let finalCompany = shipping_address.company || '';
+      
+      if (finalAddress2.includes('District: ')) {
+        const parts = finalAddress2.split(/\s*\|?\s*District:\s*/);
+        if (parts.length > 1) {
+            finalAddress2 = parts[0].trim();
+            finalCompany = parts[1].trim();
+        }
+      }
+
       const shopifyAddress = {
         first_name: shipping_address.first_name || '',
         last_name: shipping_address.last_name || '',
         address1: shipping_address.address1 || '',
-        address2: shipping_address.address2 || '',
+        address2: finalAddress2,
         city: shipping_address.city || '',
         province: shipping_address.province || '',
         country: shipping_address.country || 'India',
         zip: shipping_address.zip || '',
         phone: customer_phone || '',
-        company: shipping_address.company || ''
+        company: finalCompany
       };
       
       updatePayload.draft_order.shipping_address = shopifyAddress;

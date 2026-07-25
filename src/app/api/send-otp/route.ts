@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 
-const META_TOKEN = 'EAAM99yhroGsBR1rm4kaPOHQRtcuoMjZAdpcz2F4K1AXjYYfvtGLwttdBMO2fdaUI4lzB0fG0iaZAabFdgP9aA4GCXtw0t4zLmwZBg0ShVCJBZBYZBVYnmGkb2f9XZAXcD9evV1hoAcF9DGfSYtTCfTzzcC9iZCmWZBTiyMZC4ZBnmvOVqPfE1ZCJE3Lc3ZBs3egltQZDZD';
-const PHONE_NUMBER_ID = '1189183190949431';
 const OTP_SECRET = process.env.OTP_SECRET || 'swift_checkout_super_secret_key';
 
 export async function OPTIONS() {
@@ -42,10 +40,12 @@ export async function POST(req: Request) {
     }
 
     let merchantId = null;
+    let waToken = process.env.META_ACCESS_TOKEN || 'EAAM99yhroGsBR1rm4kaPOHQRtcuoMjZAdpcz2F4K1AXjYYfvtGLwttdBMO2fdaUI4lzB0fG0iaZAabFdgP9aA4GCXtw0t4zLmwZBg0ShVCJBZBYZBVYnmGkb2f9XZAXcD9evV1hoAcF9DGfSYtTCfTzzcC9iZCmWZBTiyMZC4ZBnmvOVqPfE1ZCJE3Lc3ZBs3egltQZDZD';
+    let waPhoneId = process.env.PHONE_NUMBER_ID || '1189183190949431';
 
     // 1. Verify merchant and fetch device phone if needed
     if (supabaseUrl && supabaseKey) {
-      const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id`, {
+      const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id,payment_settings`, {
         headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
       });
       const merchants = await merchantRes.json();
@@ -53,6 +53,10 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Invalid merchant key' }, { status: 401, headers });
       }
       merchantId = merchants[0].id;
+      if (merchants[0].payment_settings) {
+        if (merchants[0].payment_settings.wa_access_token) waToken = merchants[0].payment_settings.wa_access_token;
+        if (merchants[0].payment_settings.wa_phone_number_id) waPhoneId = merchants[0].payment_settings.wa_phone_number_id;
+      }
       
       // If phone is missing but device_id is present, get the phone from DB
       if (!resolvedPhone && device_id) {
@@ -106,10 +110,10 @@ export async function POST(req: Request) {
     console.log(`[11FIT OTP] Sending OTP ${otp} to ${sendPhone}`);
 
     // 4. Send via Meta WhatsApp Cloud API
-    const waResponse = await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
+    const waResponse = await fetch(`https://graph.facebook.com/v20.0/${waPhoneId}/messages`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${META_TOKEN}`,
+        'Authorization': `Bearer ${waToken}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
