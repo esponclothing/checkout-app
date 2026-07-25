@@ -36,7 +36,8 @@ export async function addMerchant(formData: FormData) {
     headers: {
       'apikey': supabaseKey,
       'Authorization': `Bearer ${supabaseKey}`,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation'
     },
     body: JSON.stringify({
       name,
@@ -54,6 +55,9 @@ export async function addMerchant(formData: FormData) {
     const errorData = await res.json();
     throw new Error(errorData.message || 'Failed to add merchant');
   }
+  
+  const data = await res.json();
 
   revalidatePath('/admin/super');
+  return { success: true, merchantId: data[0]?.id };
 }

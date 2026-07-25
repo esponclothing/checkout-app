@@ -47,7 +47,7 @@ export async function POST(req: Request) {
       path: '/',
       maxAge: 60 * 60 * 24 * 30 // 30 days
     });
-    cookieStore.delete('admin_verified_phone');
+    // Removed cookieStore.delete('admin_verified_phone') so they can switch stores later
 
     return NextResponse.json({ success: true });
 

@@ -8,6 +8,12 @@ export default function AddMerchantModal() {
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [adminPhones, setAdminPhones] = useState<string[]>(['']);
+  
+  const [testStatus, setTestStatus] = useState<{ type: 'success' | 'error' | 'loading' | null, msg: string }>({ type: null, msg: '' });
+  const [testStoreUrl, setTestStoreUrl] = useState('');
+  const [testToken, setTestToken] = useState('');
+  
+  const [syncStatus, setSyncStatus] = useState<{ active: boolean; message: string }>({ active: false, message: '' });
 
   const addPhoneField = () => setAdminPhones(p => [...p, '']);
   const removePhoneField = (i: number) => setAdminPhones(p => p.filter((_, idx) => idx !== i));
@@ -21,13 +27,77 @@ export default function AddMerchantModal() {
     const cleanPhones = adminPhones.map(p => p.trim()).filter(Boolean);
     formData.set('adminPhones', JSON.stringify(cleanPhones));
     try {
-      await addMerchant(formData);
+      const result = await addMerchant(formData);
       setIsOpen(false);
       setAdminPhones(['']);
+      setTestStatus({ type: null, msg: '' });
+      setTestStoreUrl('');
+      setTestToken('');
+
+      // Start background sync if merchant was created
+      if (result && result.merchantId) {
+        startBackgroundSync(result.merchantId);
+      }
     } catch (err: any) {
       alert(err.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function startBackgroundSync(merchantId: string) {
+    setSyncStatus({ active: true, message: 'Starting customer sync...' });
+    let pageInfo: string | null = null;
+    let totalSynced = 0;
+
+    try {
+      do {
+        const res = await fetch('/api/admin/super/sync-customers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ merchant_id: merchantId, page_info: pageInfo })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+          totalSynced += data.count;
+          pageInfo = data.nextPageInfo;
+          setSyncStatus({ active: true, message: `Synced ${totalSynced} customers so far...` });
+        } else {
+          setSyncStatus({ active: true, message: `Sync failed: ${data.error}` });
+          setTimeout(() => setSyncStatus({ active: false, message: '' }), 5000);
+          return;
+        }
+      } while (pageInfo);
+
+      setSyncStatus({ active: true, message: `Sync complete! ${totalSynced} customers downloaded.` });
+      setTimeout(() => setSyncStatus({ active: false, message: '' }), 5000);
+    } catch (e: any) {
+      setSyncStatus({ active: true, message: `Sync error: ${e.message}` });
+      setTimeout(() => setSyncStatus({ active: false, message: '' }), 5000);
+    }
+  }
+
+  async function handleTestConnection() {
+    if (!testStoreUrl || !testToken) {
+      setTestStatus({ type: 'error', msg: 'Please enter both Store URL and API Token first.' });
+      return;
+    }
+    setTestStatus({ type: 'loading', msg: 'Testing connection...' });
+    try {
+      const res = await fetch('/api/admin/super/test-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shopify_store_url: testStoreUrl, shopify_access_token: testToken })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTestStatus({ type: 'success', msg: `Connected successfully to: ${data.shop}` });
+      } else {
+        setTestStatus({ type: 'error', msg: data.error || 'Connection failed' });
+      }
+    } catch (e: any) {
+      setTestStatus({ type: 'error', msg: e.message || 'Network error' });
     }
   }
 
@@ -39,6 +109,13 @@ export default function AddMerchantModal() {
       >
         <Plus className="w-4 h-4" /> Add Merchant
       </button>
+
+      {syncStatus.active && (
+        <div className="fixed bottom-4 right-4 bg-slate-800 border border-slate-700 text-white px-6 py-4 rounded-xl shadow-2xl z-50 flex items-center gap-3 animate-in slide-in-from-bottom-5">
+          <div className="w-5 h-5 rounded-full border-2 border-slate-600 border-t-yellow-500 animate-spin" />
+          <span className="font-medium">{syncStatus.message}</span>
+        </div>
+      )}
 
       {isOpen && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -108,15 +185,45 @@ export default function AddMerchantModal() {
               {/* Shopify Store URL */}
               <div>
                 <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Shopify Store URL</label>
-                <input required name="storeUrl" type="url" placeholder="https://store.myshopify.com"
+                <input
+                  name="storeUrl"
+                  required
+                  value={testStoreUrl}
+                  onChange={(e) => setTestStoreUrl(e.target.value)}
+                  placeholder="e.g. esponsports.myshopify.com"
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-yellow-500 transition text-sm" />
               </div>
 
               {/* Token */}
               <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Shopify Admin API Token</label>
-                <input required name="token" type="password" placeholder="shpat_..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-yellow-500 transition text-sm" />
+                <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Admin API Access Token</label>
+                <div className="flex gap-2">
+                  <input
+                    name="token"
+                    required
+                    type="password"
+                    value={testToken}
+                    onChange={(e) => setTestToken(e.target.value)}
+                    placeholder="shpat_..."
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-yellow-500 transition text-sm" />
+                  <button
+                    type="button"
+                    onClick={handleTestConnection}
+                    disabled={testStatus.type === 'loading'}
+                    className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition whitespace-nowrap"
+                  >
+                    {testStatus.type === 'loading' ? 'Testing...' : 'Test Connection'}
+                  </button>
+                </div>
+                {testStatus.type && (
+                  <div className={`mt-2 text-xs p-2 rounded-lg ${
+                    testStatus.type === 'success' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
+                    testStatus.type === 'error' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                    'text-slate-400'
+                  }`}>
+                    {testStatus.msg}
+                  </div>
+                )}
               </div>
 
               <button disabled={loading} type="submit"

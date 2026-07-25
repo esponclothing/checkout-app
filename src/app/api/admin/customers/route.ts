@@ -41,7 +41,12 @@ export async function GET(req: Request) {
     });
 
     if (!custRes.ok) {
-      return NextResponse.json({ error: 'Failed to fetch customers', customers: [], nextPageInfo: null, prevPageInfo: null });
+      let errMsg = 'Failed to fetch customers';
+      try {
+        const errData = await custRes.json();
+        errMsg = errData.errors || errData.error || JSON.stringify(errData);
+      } catch (e) {}
+      return NextResponse.json({ error: errMsg, customers: [], nextPageInfo: null, prevPageInfo: null });
     }
 
     const cData = await custRes.json();

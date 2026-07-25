@@ -19,6 +19,7 @@ export default function CustomersTable({ initialCustomers, totalCount, initialNe
   const [isLoading, setIsLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [confirmId, setConfirmId] = useState<number | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
   const customers = pages[currentPage] || [];
@@ -44,6 +45,7 @@ export default function CustomersTable({ initialCustomers, totalCount, initialNe
       const data = await res.json();
 
       if (data.customers) {
+        setErrorMsg(null);
         // Store this page's data
         setPages(prev => {
           const next = [...prev];
@@ -58,8 +60,21 @@ export default function CustomersTable({ initialCustomers, totalCount, initialNe
         });
         setCurrentPage(pageIndex);
       }
-    } catch (e) {
+      if (data.error) {
+        setErrorMsg(data.error);
+        if (data.customers && data.customers.length === 0 && pageIndex === 0) {
+          // If the first page errored completely, make sure we show it
+          setPages(prev => {
+            const next = [...prev];
+            next[pageIndex] = [];
+            return next;
+          });
+          setCurrentPage(pageIndex);
+        }
+      }
+    } catch (e: any) {
       console.error('Failed to load page:', e);
+      setErrorMsg(e.message || 'Network error occurred');
     } finally {
       setIsLoading(false);
     }
@@ -136,11 +151,19 @@ export default function CustomersTable({ initialCustomers, totalCount, initialNe
             </tr>
           </thead>
           <tbody>
-            {customers.length === 0 && !isLoading && (
+            {errorMsg ? (
               <tr>
-                <td colSpan={6} className="p-8 text-center text-slate-500">No customers found.</td>
+                <td colSpan={7} className="p-8 text-center text-red-400 font-medium whitespace-pre-wrap">
+                  Error fetching customers from Shopify:
+                  <br />
+                  <span className="text-sm">{errorMsg}</span>
+                </td>
               </tr>
-            )}
+            ) : customers.length === 0 && !isLoading ? (
+              <tr>
+                <td colSpan={7} className="p-8 text-center text-slate-500">No customers found.</td>
+              </tr>
+            ) : null}
             {customers.map((c: any, idx: number) => (
               <tr key={c.id} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition group">
                 <td className="p-4 text-slate-600 text-sm">{currentPage * PAGE_SIZE + idx + 1}</td>
