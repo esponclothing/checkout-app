@@ -37,9 +37,10 @@ export async function POST(req: Request) {
 
     // 2. Find ALL merchants this phone has access to (owner OR in admin_phones)
     let merchants: any[] = [];
-    const rawQueryPhone = queryPhone.replace(/\D/g, '');
+    const raw12Digit = queryPhone.replace(/\D/g, '');
+    const raw10Digit = raw12Digit.length === 12 && raw12Digit.startsWith('91') ? raw12Digit.slice(2) : raw12Digit;
     
-    const orQuery = `owner_phone.eq.${queryPhone},owner_phone.eq.${rawQueryPhone},admin_phones.cs.{"${queryPhone}"},admin_phones.cs.{"${rawQueryPhone}"}`;
+    const orQuery = `owner_phone.eq.${queryPhone},owner_phone.eq.${raw12Digit},owner_phone.eq.${raw10Digit},admin_phones.cs.{"${queryPhone}"},admin_phones.cs.{"${raw12Digit}"},admin_phones.cs.{"${raw10Digit}"}`;
     const encodedOr = encodeURIComponent(orQuery);
 
     try {

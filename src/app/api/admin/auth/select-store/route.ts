@@ -20,9 +20,10 @@ export async function POST(req: Request) {
 
     // Validate that this merchant_id actually belongs to the verified phone
     let valid = false;
-    const rawQueryPhone = verifiedPhone.replace(/\D/g, '');
+    const raw12Digit = verifiedPhone.replace(/\D/g, '');
+    const raw10Digit = raw12Digit.length === 12 && raw12Digit.startsWith('91') ? raw12Digit.slice(2) : raw12Digit;
     
-    const orQuery = `owner_phone.eq.${verifiedPhone},owner_phone.eq.${rawQueryPhone},admin_phones.cs.{"${verifiedPhone}"},admin_phones.cs.{"${rawQueryPhone}"}`;
+    const orQuery = `owner_phone.eq.${verifiedPhone},owner_phone.eq.${raw12Digit},owner_phone.eq.${raw10Digit},admin_phones.cs.{"${verifiedPhone}"},admin_phones.cs.{"${raw12Digit}"},admin_phones.cs.{"${raw10Digit}"}`;
     const encodedOr = encodeURIComponent(orQuery);
 
     try {
