@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Edit2, X, Save, Power, PowerOff, Eye, EyeOff,
   Phone, Plus, Trash2, Copy, Check, Store, Key, Globe
@@ -41,6 +41,10 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
   const [showToken, setShowToken] = useState<{ [k: string]: boolean }>({});
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
+  useEffect(() => {
+    setMerchants(initial);
+  }, [initial]);
+
   const openEdit = (m: Merchant) => {
     setEditId(m.id);
     setEditData({
@@ -61,20 +65,39 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
   const updateAdminPhone = (i: number, val: string) =>
     setEditData(d => ({ ...d, admin_phones: (d.admin_phones || []).map((p, idx) => idx === i ? val : p) }));
 
+  const cleanPhone = (p: string) => {
+    let num = p.replace(/\D/g, '');
+    if (num.length === 10) return '+91' + num;
+    if (num.length === 12 && num.startsWith('91')) return '+' + num;
+    return p;
+  };
+
   const saveEdit = async () => {
     if (!editId) return;
     setSaving(true);
     try {
+      const payload = { 
+        id: editId, 
+        ...editData, 
+        owner_phone: editData.owner_phone ? cleanPhone(editData.owner_phone) : null,
+        admin_phones: (editData.admin_phones || []).map(cleanPhone).filter(Boolean) 
+      };
+
       const res = await fetch('/api/admin/super/merchant', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: editId, ...editData, admin_phones: (editData.admin_phones || []).filter(Boolean) })
+        body: JSON.stringify(payload)
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setMerchants(ms => ms.map(m => m.id === editId ? { ...m, ...editData } : m));
+      
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || `Failed to fetch (Status: ${res.status})`);
+      }
+      
+      setMerchants(ms => ms.map(m => m.id === editId ? { ...m, ...payload } : m));
       closeEdit();
     } catch(e: any) {
+      console.error(e);
       alert('Save failed: ' + e.message);
     } finally {
       setSaving(false);

@@ -7,12 +7,20 @@ export async function addMerchant(formData: FormData) {
   const domain = formData.get('domain') as string;
   const storeUrl = formData.get('storeUrl') as string;
   const token = formData.get('token') as string;
-  const ownerPhone = formData.get('ownerPhone') as string;
+  const cleanPhone = (p: string) => {
+    let num = p.replace(/\D/g, '');
+    if (num.length === 10) return '+91' + num;
+    if (num.length === 12 && num.startsWith('91')) return '+' + num;
+    return p;
+  };
+
+  const ownerPhone = cleanPhone(formData.get('ownerPhone') as string || '');
   const adminPhonesRaw = formData.get('adminPhones') as string;
 
   let adminPhones: string[] = [];
   try {
-    adminPhones = adminPhonesRaw ? JSON.parse(adminPhonesRaw) : [];
+    const rawArr = adminPhonesRaw ? JSON.parse(adminPhonesRaw) : [];
+    adminPhones = rawArr.map((p: string) => cleanPhone(p)).filter(Boolean);
   } catch(e) {}
 
   if (!name) throw new Error('Name is required');
