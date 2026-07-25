@@ -38,7 +38,7 @@ function CopyBtn({ value }: { value: string }) {
   );
 }
 
-export default function MerchantTable({ initial }: { initial: Merchant[] }) {
+export default function MerchantTable({ merchants: initial }: { merchants: Merchant[] }) {
   const [merchants, setMerchants] = useState<Merchant[]>(initial);
   const [editId, setEditId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<Merchant>>({});
