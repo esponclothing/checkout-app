@@ -10,7 +10,7 @@ interface Merchant {
   id: string;
   name: string;
   domain: string;
-  owner_phone: string;
+  owner_phone: string | null;
   admin_phones: string[];
   shopify_store_url: string;
   shopify_access_token: string;
@@ -79,7 +79,7 @@ export default function MerchantTable({ merchants: initial }: { merchants: Merch
       const payload = { 
         id: editId, 
         ...editData, 
-        owner_phone: editData.owner_phone ? cleanPhone(editData.owner_phone) : null,
+        owner_phone: editData.owner_phone ? cleanPhone(editData.owner_phone) : "",
         admin_phones: (editData.admin_phones || []).map(cleanPhone).filter(Boolean) 
       };
 
