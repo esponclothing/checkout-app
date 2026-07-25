@@ -7,7 +7,7 @@ import ThemeSettingsForm from './ThemeSettingsForm';
 import AbandonedCartsTable from './AbandonedCartsTable';
 import CustomersTable from './CustomersTable';
 import SidebarNav from './SidebarNav';
-import WorkflowsForm from './WorkflowsForm';
+import WhatsAppDashboard from './WhatsAppDashboard';
 
 export const dynamic = 'force-dynamic';
 
@@ -122,7 +122,7 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
               {currentTab === 'customers' && 'Store Customers'}
               {currentTab === 'abandoned' && 'Abandoned Checkouts'}
               {currentTab === 'otp' && 'OTP Analytics'}
-              {currentTab === 'workflows' && 'Automated Workflows'}
+              {currentTab === 'whatsapp' && 'WhatsApp Settings & Workflows'}
               {currentTab === 'payments' && 'Payment Settings'}
               {currentTab === 'theme' && 'Theme Settings'}
             </h2>
@@ -138,8 +138,8 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
           <ThemeSettingsForm initialSettings={data.merchant.payment_settings} />
         )}
 
-        {currentTab === 'workflows' && (
-          <WorkflowsForm initialSettings={data.merchant.payment_settings} />
+        {currentTab === 'whatsapp' && (
+          <WhatsAppDashboard initialSettings={data.merchant.payment_settings} />
         )}
 
         {currentTab === 'overview' && (

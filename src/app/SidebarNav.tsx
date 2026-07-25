@@ -3,14 +3,14 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTransition, useState } from 'react';
-import { LayoutDashboard, Users, ShoppingCart, Activity, CreditCard, Palette, Zap } from 'lucide-react';
+import { LayoutDashboard, Users, ShoppingCart, Activity, CreditCard, Palette, Zap, MessageCircle } from 'lucide-react';
 
 const tabs = [
   { id: 'overview',  label: 'Overview',          icon: LayoutDashboard },
   { id: 'customers', label: 'Customers',          icon: Users },
   { id: 'abandoned', label: 'Abandoned Carts',    icon: ShoppingCart },
   { id: 'otp',       label: 'OTP Analytics',      icon: Activity },
-  { id: 'workflows', label: 'Workflows',          icon: Zap },
+  { id: 'whatsapp',  label: 'WhatsApp',           icon: MessageCircle },
   { id: 'payments',  label: 'Payment Settings',   icon: CreditCard },
   { id: 'theme',     label: 'Theme Settings',     icon: Palette },
 ];
