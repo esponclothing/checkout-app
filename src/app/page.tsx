@@ -8,6 +8,7 @@ import AbandonedCartsTable from './AbandonedCartsTable';
 import CustomersTable from './CustomersTable';
 import SidebarNav from './SidebarNav';
 import WhatsAppDashboard from './WhatsAppDashboard';
+import WalletManager from './WalletManager';
 
 export const dynamic = 'force-dynamic';
 
@@ -92,8 +93,31 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
 
   const data = await getDashboardData(session.value);
   if (!data) {
-    // Invalid session or merchant deleted
     redirect('/admin/login');
+  }
+
+  // Fetch all stores this phone can access (for store switcher)
+  let allStores: { id: string; name: string; url: string }[] = [];
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL || '';
+    const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+    const ownerPhone = data.merchant.owner_phone;
+    if (ownerPhone) {
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/saas_merchants?or=(owner_phone.eq.${encodeURIComponent(ownerPhone)},admin_phones.cs.{"${ownerPhone}"})&select=id,name,shopify_store_url`,
+        { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }, cache: 'no-store' }
+      );
+      if (res.ok) {
+        const merchants = await res.json();
+        allStores = merchants.map((m: any) => ({ id: m.id, name: m.name || 'Unnamed', url: m.shopify_store_url || '' }));
+      }
+    }
+    // Fallback: at least show the current store
+    if (allStores.length === 0) {
+      allStores = [{ id: data.merchant.id, name: data.merchant.name, url: data.merchant.shopify_store_url || '' }];
+    }
+  } catch(e) {
+    allStores = [{ id: data.merchant.id, name: data.merchant.name, url: data.merchant.shopify_store_url || '' }];
   }
 
   const currentTab = searchParams.tab || 'overview';
@@ -106,7 +130,11 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
           <ShieldCheck className="w-8 h-8" />
           <h1 className="text-xl font-bold tracking-tight text-white">{data.merchant.name}</h1>
         </div>
-        <SidebarNav currentTab={currentTab} />
+        <SidebarNav
+          currentTab={currentTab}
+          allStores={allStores}
+          currentMerchantId={session.value}
+        />
 
         <div className="mt-auto pt-4 border-t border-slate-800">
           <LogoutButton />
@@ -123,6 +151,7 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
               {currentTab === 'abandoned' && 'Abandoned Checkouts'}
               {currentTab === 'otp' && 'OTP Analytics'}
               {currentTab === 'whatsapp' && 'WhatsApp Settings & Workflows'}
+              {currentTab === 'wallet' && 'Store Credit & Wallet Manager'}
               {currentTab === 'payments' && 'Payment Settings'}
               {currentTab === 'theme' && 'Theme Settings'}
             </h2>
@@ -140,6 +169,10 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
 
         {currentTab === 'whatsapp' && (
           <WhatsAppDashboard initialSettings={data.merchant.payment_settings} />
+        )}
+
+        {currentTab === 'wallet' && (
+          <WalletManager />
         )}
 
         {currentTab === 'overview' && (

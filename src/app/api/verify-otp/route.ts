@@ -35,16 +35,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Database not configured' }, { status: 500, headers });
     }
 
-    // 1. Verify merchant
-    const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id`, {
-      headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
-    });
+    // 1. Verify merchant (fetch Shopify credentials too for wallet lookup)
+    const merchantRes = await fetch(
+      `${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id,shopify_access_token,shopify_store_url,payment_settings`,
+      { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
+    );
     const merchants = await merchantRes.json();
     if (!merchants || merchants.length === 0) {
       return NextResponse.json({ error: 'Invalid merchant key' }, { status: 401, headers });
     }
 
-    let merchantId = merchants[0].id;
+    const merchant = merchants[0];
+    const merchantId = merchant.id;
 
     // 2. Verify OTP
     const [hash, expires] = signature.split('.');
@@ -84,7 +86,6 @@ export async function POST(req: Request) {
       formattedPhone = '+91' + formattedPhone;
     }
     
-    // Upsert into network_users with all available profile data
     const userUpsertData: any = { phone: formattedPhone };
     if (email) userUpsertData.email = email;
     if (first_name) userUpsertData.first_name = first_name;
@@ -119,7 +120,6 @@ export async function POST(req: Request) {
         })
       });
 
-      // Update any abandoned checkout sessions for this device with the new phone number
       await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?device_id=eq.${did}`, {
         method: 'PATCH',
         headers: {
@@ -131,8 +131,7 @@ export async function POST(req: Request) {
       });
     }
 
-    // 4. SECURELY FETCH AND RETURN SAVED ADDRESSES
-    // Now that they are authenticated, we can return PII!
+    // 4. Fetch saved profile (address, etc)
     const userRes = await fetch(`${supabaseUrl}/rest/v1/network_users?phone=eq.${encodeURIComponent(formattedPhone)}&select=*`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
@@ -143,10 +142,56 @@ export async function POST(req: Request) {
       profile = users[0];
     }
 
+    // 5. Fetch wallet (store credit) balance if enabled for this merchant
+    let storeCreditBalance = 0;
+    const paymentSettings = merchant.payment_settings || {};
+    if (paymentSettings.store_credit_enabled && merchant.shopify_access_token && merchant.shopify_store_url) {
+      try {
+        const cleanStore = merchant.shopify_store_url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+        const graphqlUrl = `https://${cleanStore}/admin/api/2024-04/graphql.json`;
+        const gqlHeaders = {
+          'Content-Type': 'application/json',
+          'X-Shopify-Access-Token': merchant.shopify_access_token
+        };
+
+        // Find customer by phone
+        const searchRes = await fetch(
+          `https://${cleanStore}/admin/api/2024-04/customers/search.json?query=phone:${encodeURIComponent(formattedPhone)}&limit=1&fields=id`,
+          { headers: { 'X-Shopify-Access-Token': merchant.shopify_access_token } }
+        );
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          const customerId = searchData.customers?.[0]?.id;
+          if (customerId) {
+            const balQ = `query {
+              customer(id: "gid://shopify/Customer/${customerId}") {
+                storeCreditAccounts(first: 1) {
+                  edges { node { balance { amount } } }
+                }
+              }
+            }`;
+            const balRes = await fetch(graphqlUrl, {
+              method: 'POST',
+              headers: gqlHeaders,
+              body: JSON.stringify({ query: balQ })
+            });
+            const balData = await balRes.json();
+            storeCreditBalance = parseFloat(
+              balData.data?.customer?.storeCreditAccounts?.edges?.[0]?.node?.balance?.amount || '0'
+            );
+          }
+        }
+      } catch(e) {
+        console.error('Wallet balance fetch error (non-fatal):', e);
+      }
+    }
+
     return NextResponse.json({ 
       success: true, 
       message: 'Phone verified successfully',
-      profile: profile
+      profile,
+      storeCreditBalance,
+      store_credit_enabled: paymentSettings.store_credit_enabled || false
     }, { headers });
 
   } catch (error) {

@@ -8,10 +8,15 @@ export async function addMerchant(formData: FormData) {
   const storeUrl = formData.get('storeUrl') as string;
   const token = formData.get('token') as string;
   const ownerPhone = formData.get('ownerPhone') as string;
+  const adminPhonesRaw = formData.get('adminPhones') as string;
 
-  if (!name) throw new Error("Name is required");
+  let adminPhones: string[] = [];
+  try {
+    adminPhones = adminPhonesRaw ? JSON.parse(adminPhonesRaw) : [];
+  } catch(e) {}
 
-  // Generate a random sk_live_ key
+  if (!name) throw new Error('Name is required');
+
   const randomKey = Math.random().toString(36).substring(2, 15);
   const apiKey = `sk_live_${name.toLowerCase().replace(/[^a-z0-9]/g, '')}_${randomKey}`;
 
@@ -31,15 +36,16 @@ export async function addMerchant(formData: FormData) {
       shopify_store_url: storeUrl,
       shopify_access_token: token,
       api_key: apiKey,
-      owner_phone: ownerPhone || null
+      owner_phone: ownerPhone || null,
+      admin_phones: adminPhones,
+      is_active: true
     })
   });
 
   if (!res.ok) {
     const errorData = await res.json();
-    throw new Error(errorData.message || "Failed to add merchant");
+    throw new Error(errorData.message || 'Failed to add merchant');
   }
 
-  // Revalidate the dashboard page so the new merchant appears instantly
-  revalidatePath('/');
+  revalidatePath('/admin/super');
 }

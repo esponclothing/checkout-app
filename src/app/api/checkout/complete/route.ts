@@ -16,6 +16,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { merchant_key, draft_order_id, shipping_address, email, phone } = body;
+    const walletCreditAmount = parseFloat(body.wallet_credit_amount || 0);
 
     if (!merchant_key || !draft_order_id || !shipping_address) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400, headers });
@@ -206,6 +207,19 @@ export async function POST(req: Request) {
       };
     }
 
+    // 3. Apply Wallet Credit Discount (if customer used wallet)
+    if (walletCreditAmount > 0 && merchant.payment_settings?.store_credit_enabled) {
+      let currentDiscountAmt = parseFloat(draftPayload.applied_discount?.amount || existingDraft.applied_discount?.amount || '0');
+      let currentDesc = draftPayload.applied_discount?.description || existingDraft.applied_discount?.description || 'Discount';
+      const totalDiscount = currentDiscountAmt + walletCreditAmount;
+      draftPayload.applied_discount = {
+        description: currentDiscountAmt > 0 ? `${currentDesc} + Wallet Credit` : 'Wallet Credit',
+        value: totalDiscount.toFixed(2),
+        value_type: 'fixed_amount',
+        amount: totalDiscount.toFixed(2)
+      };
+    }
+
     await fetch(`${formattedUrl}/admin/api/2024-01/draft_orders/${draft_order_id}.json`, {
       method: 'PUT',
       headers: {
@@ -261,7 +275,50 @@ export async function POST(req: Request) {
       throw new Error(JSON.stringify(completeData));
     }
 
-    // 3. Update checkout_sessions status to completed
+    // 5. Debit customer store credit AFTER successful order completion (non-blocking)
+    if (walletCreditAmount > 0 && existingCustomerId && merchant.payment_settings?.store_credit_enabled) {
+      (async () => {
+        try {
+          const graphqlUrl = `${formattedUrl}/admin/api/2024-04/graphql.json`;
+          const gqlHeaders = { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyToken };
+          const customerGid = `gid://shopify/Customer/${existingCustomerId}`;
+
+          // Fetch StoreCreditAccount ID
+          const fetchQ = `query { customer(id: "${customerGid}") { storeCreditAccounts(first:1) { edges { node { id balance { amount } } } } } }`;
+          const fetchRes = await fetch(graphqlUrl, { method: 'POST', headers: gqlHeaders, body: JSON.stringify({ query: fetchQ }) });
+          const fetchData = await fetchRes.json();
+          const storeCreditAccountId = fetchData.data?.customer?.storeCreditAccounts?.edges?.[0]?.node?.id;
+
+          if (storeCreditAccountId) {
+            const balance = parseFloat(fetchData.data.customer.storeCreditAccounts.edges[0].node.balance.amount);
+            const debitAmt = Math.min(walletCreditAmount, balance);
+
+            const debitMut = `mutation storeCreditAccountDebit($id: ID!, $debitInput: StoreCreditAccountDebitInput!) {
+              storeCreditAccountDebit(id: $id, debitInput: $debitInput) {
+                userErrors { field message }
+              }
+            }`;
+            await fetch(graphqlUrl, {
+              method: 'POST', headers: gqlHeaders,
+              body: JSON.stringify({
+                query: debitMut,
+                variables: { id: storeCreditAccountId, debitInput: { debitAmount: { amount: debitAmt.toFixed(2), currencyCode: 'INR' } } }
+              })
+            });
+
+            // Log the debit in wallet_notes metafield
+            const noteEntry = JSON.stringify([{ timestamp: new Date().toISOString(), type: 'debit', amount: debitAmt.toFixed(2), reason: `Used in Order #${draft_order_id}` }]);
+            const mfMut = `mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $metafields) { userErrors { message } } }`;
+            await fetch(graphqlUrl, {
+              method: 'POST', headers: gqlHeaders,
+              body: JSON.stringify({ query: mfMut, variables: { metafields: [{ ownerId: customerGid, namespace: 'custom', key: 'wallet_notes', type: 'json', value: noteEntry }] } })
+            });
+          }
+        } catch(e) { console.error('Post-order wallet debit error (non-fatal):', e); }
+      })();
+    }
+
+    // 6. Update checkout_sessions status to completed
     if (supabaseUrl && supabaseKey) {
       await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?draft_order_id=eq.${draft_order_id}`, {
         method: 'PATCH',

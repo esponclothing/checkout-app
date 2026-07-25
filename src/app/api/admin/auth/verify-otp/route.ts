@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { cookies } from 'next/headers';
 
+const OTP_SECRET = process.env.OTP_SECRET || 'swift_checkout_super_secret_key';
+
 export async function POST(req: Request) {
   try {
     const { phone, otp, signature } = await req.json();
@@ -20,9 +22,7 @@ export async function POST(req: Request) {
     }
 
     const data = `${phone}.${otp}.${expires}`;
-    const calculatedHash = crypto.createHmac('sha256', process.env.OTP_SECRET || 'swift_checkout_super_secret_key')
-                                 .update(data)
-                                 .digest('hex');
+    const calculatedHash = crypto.createHmac('sha256', OTP_SECRET).update(data).digest('hex');
 
     if (calculatedHash !== hash) {
       if ((phone === '+919306817689' || phone === '+919812354321') && otp === '1234') {
@@ -33,33 +33,67 @@ export async function POST(req: Request) {
     }
 
     let queryPhone = phone;
-    if (phone === '+919812354321') {
-      queryPhone = '+919306817689';
+    if (phone === '+919812354321') queryPhone = '+919306817689';
+
+    // 2. Find ALL merchants this phone has access to (owner OR in admin_phones)
+    let merchants: any[] = [];
+
+    // Try array-contains query first
+    try {
+      const arrayRes = await fetch(
+        `${supabaseUrl}/rest/v1/saas_merchants?or=(owner_phone.eq.${encodeURIComponent(queryPhone)},admin_phones.cs.{"${queryPhone}"})&select=id,name,shopify_store_url`,
+        { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
+      );
+      if (arrayRes.ok) merchants = await arrayRes.json();
+    } catch(e) {}
+
+    // Fallback: plain owner_phone lookup
+    if (!merchants || merchants.length === 0) {
+      const ownerRes = await fetch(
+        `${supabaseUrl}/rest/v1/saas_merchants?owner_phone=eq.${encodeURIComponent(queryPhone)}&select=id,name,shopify_store_url`,
+        { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
+      );
+      if (ownerRes.ok) merchants = await ownerRes.json();
     }
 
-    // 2. Look up Merchant
-    const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?owner_phone=eq.${encodeURIComponent(queryPhone)}`, {
-      headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
-    });
-    const merchants = await merchantRes.json();
-    
     if (!merchants || merchants.length === 0) {
       return NextResponse.json({ error: 'Merchant not found.' }, { status: 403 });
     }
 
-    const merchantId = merchants[0].id;
+    // 3a. If only ONE store → auto-login, set session cookie immediately
+    if (merchants.length === 1) {
+      const merchantId = merchants[0].id;
+      const cookieStore = await cookies();
+      cookieStore.set('admin_session', merchantId, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 60 * 60 * 24 * 30 // 30 days
+      });
+      return NextResponse.json({ success: true, multi_store: false });
+    }
 
-    // 3. Set Session Cookie
+    // 3b. Multiple stores → set a temporary "verified" cookie, return store list for selection
     const cookieStore = await cookies();
-    cookieStore.set('admin_session', merchantId, {
+    // Store the verified phone so select-store can validate
+    cookieStore.set('admin_verified_phone', queryPhone, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
-      maxAge: 60 * 60 * 24 * 30 // 30 days
+      maxAge: 10 * 60 // 10 minutes to select a store
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      success: true,
+      multi_store: true,
+      stores: merchants.map(m => ({
+        id: m.id,
+        name: m.name || 'Unnamed Store',
+        url: m.shopify_store_url || ''
+      }))
+    });
 
   } catch (error: any) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

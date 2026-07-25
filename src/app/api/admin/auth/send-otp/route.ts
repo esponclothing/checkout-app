@@ -13,24 +13,42 @@ export async function POST(req: Request) {
     const supabaseUrl = process.env.SUPABASE_URL || '';
     const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
-    // Check if phone is an owner
     let formattedPhone = phone;
     if (!formattedPhone.startsWith('+')) {
       formattedPhone = '+91' + formattedPhone.replace(/\D/g, '');
     }
-    
+
     let queryPhone = formattedPhone;
     if (formattedPhone === '+919812354321') {
       queryPhone = '+919306817689';
     }
 
-    const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?owner_phone=eq.${encodeURIComponent(queryPhone)}&select=id,payment_settings`, {
-      headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
-    });
-    const merchants = await merchantRes.json();
-    
+    // Check if phone is an owner or admin of any merchant (with array-contains fallback)
+    let merchants: any[] = [];
+    try {
+      const arrayRes = await fetch(
+        `${supabaseUrl}/rest/v1/saas_merchants?or=(owner_phone.eq.${encodeURIComponent(queryPhone)},admin_phones.cs.{"${queryPhone}"})&select=id,payment_settings`,
+        { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
+      );
+      if (arrayRes.ok) merchants = await arrayRes.json();
+    } catch(e) {}
+
+    if (!merchants || merchants.length === 0) {
+      const ownerRes = await fetch(
+        `${supabaseUrl}/rest/v1/saas_merchants?owner_phone=eq.${encodeURIComponent(queryPhone)}&select=id,payment_settings`,
+        { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
+      );
+      if (ownerRes.ok) merchants = await ownerRes.json();
+    }
+
     if (!merchants || merchants.length === 0) {
       return NextResponse.json({ error: 'This number is not registered as a store owner.' }, { status: 403 });
+    }
+
+    // Check if any of their stores is active
+    const hasActiveStore = merchants.some((m: any) => m.is_active !== false);
+    if (!hasActiveStore) {
+      return NextResponse.json({ error: 'Your store access has been suspended. Please contact support.' }, { status: 403 });
     }
 
     const waSettings = merchants[0].payment_settings || {};
@@ -44,13 +62,10 @@ export async function POST(req: Request) {
     const fullSignature = `${signature}.${expires}`;
 
     let sendPhone = formattedPhone.replace(/\D/g, '');
-    
+
     const waResponse = await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${META_TOKEN}`,
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Authorization': `Bearer ${META_TOKEN}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
