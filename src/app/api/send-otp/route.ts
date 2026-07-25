@@ -42,6 +42,7 @@ export async function POST(req: Request) {
     let merchantId = null;
     let waToken = process.env.META_ACCESS_TOKEN || 'EAAM99yhroGsBR1rm4kaPOHQRtcuoMjZAdpcz2F4K1AXjYYfvtGLwttdBMO2fdaUI4lzB0fG0iaZAabFdgP9aA4GCXtw0t4zLmwZBg0ShVCJBZBYZBVYnmGkb2f9XZAXcD9evV1hoAcF9DGfSYtTCfTzzcC9iZCmWZBTiyMZC4ZBnmvOVqPfE1ZCJE3Lc3ZBs3egltQZDZD';
     let waPhoneId = process.env.PHONE_NUMBER_ID || '1189183190949431';
+    let waOtpTemplate = 'eleven_fit_otp';
 
     // 1. Verify merchant and fetch device phone if needed
     if (supabaseUrl && supabaseKey) {
@@ -56,6 +57,7 @@ export async function POST(req: Request) {
       if (merchants[0].payment_settings) {
         if (merchants[0].payment_settings.wa_access_token) waToken = merchants[0].payment_settings.wa_access_token;
         if (merchants[0].payment_settings.wa_phone_number_id) waPhoneId = merchants[0].payment_settings.wa_phone_number_id;
+        if (merchants[0].payment_settings.wa_otp_template) waOtpTemplate = merchants[0].payment_settings.wa_otp_template;
       }
       
       // If phone is missing but device_id is present, get the phone from DB
@@ -122,7 +124,7 @@ export async function POST(req: Request) {
         to: sendPhone,
         type: 'template',
         template: {
-          name: 'eleven_fit_otp',
+          name: waOtpTemplate,
           language: { code: 'en' },
           components: [
             {

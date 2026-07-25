@@ -5,9 +5,11 @@ import { ExternalLink, Key, Phone, Save, Info, CheckCircle2 } from 'lucide-react
 
 export default function WhatsAppSettingsForm({ initialSettings }: { initialSettings: any }) {
   const [settings, setSettings] = useState({
+    ...initialSettings,
     wa_phone_number_id: initialSettings?.wa_phone_number_id || '',
     wa_business_account_id: initialSettings?.wa_business_account_id || '',
-    wa_access_token: initialSettings?.wa_access_token || ''
+    wa_access_token: initialSettings?.wa_access_token || '',
+    wa_otp_template: initialSettings?.wa_otp_template || ''
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -72,7 +74,34 @@ export default function WhatsAppSettingsForm({ initialSettings }: { initialSetti
               </div>
             </div>
 
+            <div>
+              <label className="block text-sm font-semibold text-slate-300 mb-2">WhatsApp Business Account ID</label>
+              <div className="relative">
+                <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <input 
+                  type="text" 
+                  value={settings.wa_business_account_id}
+                  onChange={(e) => handleChange('wa_business_account_id', e.target.value)}
+                  placeholder="e.g. 102345678901234"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-11 pr-4 text-white focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all placeholder:text-slate-600"
+                />
+              </div>
+            </div>
 
+            <div>
+              <label className="block text-sm font-semibold text-slate-300 mb-2">OTP Verification Template Name</label>
+              <div className="relative">
+                <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <input 
+                  type="text" 
+                  value={settings.wa_otp_template}
+                  onChange={(e) => handleChange('wa_otp_template', e.target.value)}
+                  placeholder="e.g. storename_otp_ver"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-11 pr-4 text-white focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all placeholder:text-slate-600 font-mono"
+                />
+              </div>
+              <p className="text-xs text-slate-500 mt-2">The name of the Meta WhatsApp template used for OTP verification.</p>
+            </div>
 
             <div>
               <label className="block text-sm font-semibold text-slate-300 mb-2">Permanent Access Token</label>
