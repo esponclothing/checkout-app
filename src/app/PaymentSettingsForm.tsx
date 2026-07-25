@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 export default function PaymentSettingsForm({ initialSettings }: { initialSettings: any }) {
-  const [settings, setSettings] = useState(initialSettings || {
+  const [settings, setSettings] = useState({
     cod_enabled: false,
     cod_fee: 0,
     prepaid_enabled: false,
@@ -19,8 +19,9 @@ export default function PaymentSettingsForm({ initialSettings }: { initialSettin
     cashfree_secret_key: '',
     cashfree_env: 'sandbox',
     store_credit_enabled: false,
-    store_credit_limit_type: 'unlimited', // 'unlimited' | 'percent' | 'fixed'
-    store_credit_limit_value: 0
+    store_credit_limit_type: 'unlimited',
+    store_credit_limit_value: 0,
+    ...(initialSettings || {})
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -129,21 +130,21 @@ export default function PaymentSettingsForm({ initialSettings }: { initialSettin
             )}
           </div>
           <label className="flex items-center gap-3 cursor-pointer">
-            <input type="checkbox" checked={settings.cod_enabled} onChange={(e) => handleChange('cod_enabled', e.target.checked)} className="w-5 h-5 accent-yellow-500" />
+            <input type="checkbox" checked={settings.cod_enabled || false} onChange={(e) => handleChange('cod_enabled', e.target.checked)} className="w-5 h-5 accent-yellow-500" />
             <span className="text-slate-300 font-medium">Enable Cash on Delivery (COD)</span>
           </label>
           <label className="flex items-center gap-3 cursor-pointer">
-            <input type="checkbox" checked={settings.prepaid_enabled} onChange={(e) => handleChange('prepaid_enabled', e.target.checked)} className="w-5 h-5 accent-yellow-500" />
+            <input type="checkbox" checked={settings.prepaid_enabled || false} onChange={(e) => handleChange('prepaid_enabled', e.target.checked)} className="w-5 h-5 accent-yellow-500" />
             <span className="text-slate-300 font-medium">Enable Prepaid (Credit Card, UPI, etc.)</span>
           </label>
           <label className="flex items-center gap-3 cursor-pointer">
-            <input type="checkbox" checked={settings.partial_cod_enabled} onChange={(e) => handleChange('partial_cod_enabled', e.target.checked)} className="w-5 h-5 accent-yellow-500" />
+            <input type="checkbox" checked={settings.partial_cod_enabled || false} onChange={(e) => handleChange('partial_cod_enabled', e.target.checked)} className="w-5 h-5 accent-yellow-500" />
             <span className="text-slate-300 font-medium">Enable Partial COD (Pay a portion upfront)</span>
           </label>
           {/* Hide Shopify Checkout redirect when Store Credit is enabled — wallet debit must go through our app */}
           {!settings.store_credit_enabled ? (
             <label className="flex items-center gap-3 cursor-pointer">
-              <input type="checkbox" checked={settings.use_shopify_checkout_prepaid} onChange={(e) => handleChange('use_shopify_checkout_prepaid', e.target.checked)} className="w-5 h-5 accent-yellow-500" />
+              <input type="checkbox" checked={settings.use_shopify_checkout_prepaid || false} onChange={(e) => handleChange('use_shopify_checkout_prepaid', e.target.checked)} className="w-5 h-5 accent-yellow-500" />
               <div>
                 <span className="text-slate-300 font-medium block">Route Prepaid Orders via Native Shopify Checkout</span>
                 <span className="text-slate-500 text-xs">If enabled, standard Prepaid orders will redirect to Shopify Checkout instead of popup.</span>
