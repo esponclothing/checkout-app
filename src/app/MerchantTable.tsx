@@ -38,54 +38,6 @@ function CopyBtn({ value }: { value: string }) {
   );
 }
 
-export default function MerchantTable({ merchants: initial }: { merchants: Merchant[] }) {
-  const [merchants, setMerchants] = useState<Merchant[]>(initial);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [editData, setEditData] = useState<Partial<Merchant>>({});
-  const [saving, setSaving] = useState(false);
-  const [showToken, setShowToken] = useState<{ [k: string]: boolean }>({});
-  const [togglingId, setTogglingId] = useState<string | null>(null);
-
-  const [setupMerchant, setSetupMerchant] = useState<Merchant | null>(null);
-
-  useEffect(() => {
-    setMerchants(initial);
-  }, [initial]);
-
-  const openEdit = (m: Merchant) => {
-    setEditId(m.id);
-    setEditData({
-      name: m.name,
-      domain: m.domain,
-      owner_phone: m.owner_phone,
-      admin_phones: m.admin_phones || [],
-      shopify_store_url: m.shopify_store_url,
-      shopify_access_token: m.shopify_access_token,
-    });
-  };
-
-  const closeEdit = () => { setEditId(null); setEditData({}); };
-
-  const addAdminPhone = () => setEditData(d => ({ ...d, admin_phones: [...(d.admin_phones || []), ''] }));
-  const removeAdminPhone = (i: number) =>
-    setEditData(d => ({ ...d, admin_phones: (d.admin_phones || []).filter((_, idx) => idx !== i) }));
-  const updateAdminPhone = (i: number, val: string) =>
-    setEditData(d => ({ ...d, admin_phones: (d.admin_phones || []).map((p, idx) => idx === i ? val : p) }));
-
-  const cleanPhone = (p: string) => {
-    let num = p.replace(/\D/g, '');
-    if (num.length === 10) return '+91' + num;
-    if (num.length === 12 && num.startsWith('91')) return '+' + num;
-    return p;
-  };
-
-  return (
-    <button onClick={copy} className="ml-1 text-slate-500 hover:text-slate-300 transition">
-      {copied ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-    </button>
-  );
-}
-
 export default function MerchantTable({ initial }: { initial: Merchant[] }) {
   const [merchants, setMerchants] = useState<Merchant[]>(initial);
   const [editId, setEditId] = useState<string | null>(null);
