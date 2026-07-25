@@ -72,19 +72,7 @@ export default function WhatsAppSettingsForm({ initialSettings }: { initialSetti
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-slate-300 mb-2">WhatsApp Business Account ID (WABA ID)</label>
-              <div className="relative">
-                <Info className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                <input 
-                  type="text" 
-                  value={settings.wa_business_account_id}
-                  onChange={(e) => handleChange('wa_business_account_id', e.target.value)}
-                  placeholder="e.g. 109876543210987"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-11 pr-4 text-white focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all placeholder:text-slate-600"
-                />
-              </div>
-            </div>
+
 
             <div>
               <label className="block text-sm font-semibold text-slate-300 mb-2">Permanent Access Token</label>
