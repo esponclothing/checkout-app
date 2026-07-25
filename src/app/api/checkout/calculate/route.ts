@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   
   try {
     const body = await req.json();
-    const { merchant_key, items, discount_code, cart_discount, cart_subtotal, raw_cart } = body;
+    const { merchant_key, items, discount_code, cart_discount, cart_subtotal, raw_cart, utm_data } = body;
 
     if (!merchant_key || !items) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400, headers });
@@ -47,6 +47,16 @@ export async function POST(req: Request) {
         }))
       }
     };
+
+    if (utm_data) {
+      const tags = [];
+      if (utm_data.utm_source) tags.push(`utm_source:${utm_data.utm_source}`);
+      if (utm_data.utm_medium) tags.push(`utm_medium:${utm_data.utm_medium}`);
+      if (utm_data.utm_campaign) tags.push(`utm_campaign:${utm_data.utm_campaign}`);
+      if (tags.length > 0) {
+        draftOrderPayload.draft_order.tags = tags.join(', ');
+      }
+    }
 
     let totalDiscountAmount = cart_discount ? parseFloat(cart_discount) / 100 : 0;
     let manualDiscountValid = false;
@@ -141,7 +151,7 @@ export async function POST(req: Request) {
             phone: phone || existing[0].phone,
             draft_order_id: shopifyData.draft_order.id.toString(),
             invoice_url: shopifyData.draft_order.invoice_url,
-            cart_details: raw_cart || items,
+            cart_details: { ...(raw_cart || items || {}), utm_data },
             updated_at: new Date().toISOString()
           })
         });
@@ -160,7 +170,7 @@ export async function POST(req: Request) {
             device_id: deviceId,
             draft_order_id: shopifyData.draft_order.id.toString(),
             invoice_url: shopifyData.draft_order.invoice_url,
-            cart_details: raw_cart || items,
+            cart_details: { ...(raw_cart || items || {}), utm_data },
             status: 'abandoned'
           })
         });
