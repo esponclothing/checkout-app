@@ -15,7 +15,7 @@ export default function WhatsAppSettingsForm({ initialSettings }: { initialSetti
   const [message, setMessage] = useState('');
 
   const handleChange = (key: string, value: string) => {
-    setSettings(prev => ({ ...prev, [key]: value }));
+    setSettings((prev: any) => ({ ...prev, [key]: value }));
   };
 
   const handleSave = async (e: React.FormEvent) => {
