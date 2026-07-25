@@ -59,7 +59,7 @@ export async function POST(req: Request) {
 
     if (calculatedHash !== hash) {
       // Mock validation for test number
-      if (phone === '9306817689' && otp === '1234') {
+      if (phone === '+919306817689' && otp === '1234') {
         // Allow
       } else {
         await fetch(`${supabaseUrl}/rest/v1/otp_logs?phone=eq.${encodeURIComponent(phone)}&merchant_id=eq.${merchantId}&status=eq.sent`, {

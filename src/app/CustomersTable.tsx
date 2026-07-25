@@ -9,9 +9,10 @@ interface Props {
   initialCustomers: any[];
   totalCount: number;
   initialNextPageInfo: string | null;
+  sessions?: any[];
 }
 
-export default function CustomersTable({ initialCustomers, totalCount, initialNextPageInfo }: Props) {
+export default function CustomersTable({ initialCustomers, totalCount, initialNextPageInfo, sessions = [] }: Props) {
   const [pages, setPages] = useState<any[][]>([initialCustomers]); // each index = one page of customers
   const [cursors, setCursors] = useState<(string | null)[]>([null, initialNextPageInfo]); // cursors[i] = cursor to load page i
   const [currentPage, setCurrentPage] = useState(0);
@@ -129,6 +130,7 @@ export default function CustomersTable({ initialCustomers, totalCount, initialNe
               <th className="p-4 font-medium">Name</th>
               <th className="p-4 font-medium">Email</th>
               <th className="p-4 font-medium">Phone</th>
+              <th className="p-4 font-medium">Source</th>
               <th className="p-4 font-medium">Orders</th>
               <th className="p-4 font-medium">Actions</th>
             </tr>
@@ -150,6 +152,19 @@ export default function CustomersTable({ initialCustomers, totalCount, initialNe
                 </td>
                 <td className="p-4 text-slate-400 text-sm">{c.email || <span className="text-slate-600 italic">N/A</span>}</td>
                 <td className="p-4 text-slate-400 text-sm">{c.phone || <span className="text-slate-600 italic">N/A</span>}</td>
+                <td className="p-4">
+                  {(() => {
+                    const matchedSession = c.phone ? sessions.find(s => c.phone.includes(s.phone?.replace('+91', ''))) : null;
+                    const utmSource = matchedSession?.cart_details?.utm_data?.utm_source;
+                    return utmSource ? (
+                      <span className="px-2 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded text-xs font-semibold">
+                        {utmSource}
+                      </span>
+                    ) : (
+                      <span className="text-slate-600 text-xs italic">Organic</span>
+                    );
+                  })()}
+                </td>
                 <td className="p-4">
                   <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${c.orders_count > 0 ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-slate-800 text-slate-400'}`}>
                     {c.orders_count}

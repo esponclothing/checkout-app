@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { ShoppingCart, ChevronDown, ChevronUp, User, Package, Trash2, RefreshCw } from 'lucide-react';
 
 export default function AbandonedCartsTable({ abandoned: initialAbandoned, customers }: { abandoned: any[], customers: any[] }) {
-  const [abandoned, setAbandoned] = useState<any[]>(initialAbandoned);
+  const [abandoned, setAbandoned] = useState<any[]>([...initialAbandoned].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -54,6 +54,7 @@ export default function AbandonedCartsTable({ abandoned: initialAbandoned, custo
             <th className="p-4 font-medium w-10"></th>
             <th className="p-4 font-medium">Date</th>
             <th className="p-4 font-medium">Customer Phone</th>
+            <th className="p-4 font-medium">Source</th>
             <th className="p-4 font-medium">Device ID</th>
             <th className="p-4 font-medium">Cart Value</th>
             <th className="p-4 font-medium">Recovery Link</th>
@@ -81,9 +82,18 @@ export default function AbandonedCartsTable({ abandoned: initialAbandoned, custo
                   <td className="p-4 text-slate-500">
                     {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                   </td>
-                  <td className="p-4 text-slate-400 whitespace-nowrap">{new Date(s.created_at).toLocaleString()}</td>
+                  <td className="p-4 text-slate-400 whitespace-nowrap">{new Date(s.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'medium' })}</td>
                   <td className="p-4 font-semibold text-white">
                     {s.phone || <span className="text-slate-500 italic">Unknown</span>}
+                  </td>
+                  <td className="p-4">
+                    {s.cart_details?.utm_data?.utm_source ? (
+                      <span className="px-2 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded text-xs font-semibold">
+                        {s.cart_details.utm_data.utm_source}
+                      </span>
+                    ) : (
+                      <span className="text-slate-600 text-xs italic">Organic</span>
+                    )}
                   </td>
                   <td className="p-4">
                     <code className="text-xs text-slate-500 bg-slate-950 px-2 py-1 rounded">{s.device_id?.substring(0, 12) || 'N/A'}...</code>

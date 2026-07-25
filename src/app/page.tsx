@@ -168,6 +168,7 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
             initialCustomers={data.customers}
             totalCount={data.totalCustomerCount}
             initialNextPageInfo={data.initialNextPageInfo}
+            sessions={data.abandoned.concat(data.completed)}
           />
         )}
 
@@ -197,7 +198,7 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
                 )}
                 {data.otpLogs.map((log: any) => (
                   <tr key={log.id} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition">
-                    <td className="p-4 text-slate-400">{new Date(log.created_at).toLocaleString()}</td>
+                    <td className="p-4 text-slate-400">{new Date(log.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'medium' })}</td>
                     <td className="p-4 font-semibold text-white">{log.phone}</td>
                     <td className="p-4">
                       <code className="text-xs text-slate-500 bg-slate-950 px-2 py-1 rounded">{log.device_id?.substring(0, 8) || 'N/A'}...</code>

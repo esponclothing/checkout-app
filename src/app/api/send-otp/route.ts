@@ -34,6 +34,12 @@ export async function POST(req: Request) {
     const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
     
     let resolvedPhone = phone;
+    if (resolvedPhone) {
+      let clean = resolvedPhone.replace(/\D/g, '');
+      if (clean.length === 10) clean = '91' + clean;
+      else if (clean.startsWith('0')) clean = '91' + clean.slice(1);
+      resolvedPhone = '+' + clean;
+    }
 
     let merchantId = null;
 
