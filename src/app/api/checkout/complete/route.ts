@@ -233,7 +233,7 @@ export async function POST(req: Request) {
     let paymentPending = true;
     let paymentStatus = 'pending';
 
-    if (walletCreditAmount > 0) {
+    if (walletCreditAmount > 0 && body.payment_method !== 'partial_cod' && body.payment_method !== 'cod') {
       paymentPending = false;
       paymentStatus = 'paid';
     }
@@ -259,10 +259,19 @@ export async function POST(req: Request) {
       
       if (cfData.order_status === 'PAID') {
         paymentStatus = 'paid';
-        paymentPending = false; // Cashfree payment successful, we mark it paid here. Webhook adds remainder later.
+        // For partial_cod: draft order is at FULL price; payment_pending=true so Shopify marks it Unpaid.
+        // We then post a transaction for the advance amount → Shopify shows "Partially Paid".
+        paymentPending = body.payment_method === 'partial_cod' ? true : false;
       } else {
         return NextResponse.json({ error: `Payment not completed. Status: ${cfData.order_status}` }, { status: 400, headers });
       }
+    }
+
+    // Ensure payment_pending is ALWAYS true when completing a draft order for partial_cod or cod,
+    // regardless of walletCreditAmount or any other flag. This prevents Shopify from marking the
+    // full order price as "Paid".
+    if (body.payment_method === 'partial_cod' || body.payment_method === 'cod') {
+      paymentPending = true;
     }
 
     // 3. Complete the Draft Order
@@ -280,87 +289,64 @@ export async function POST(req: Request) {
       throw new Error(JSON.stringify(completeData));
     }
 
-    // 4. Instant Order Edit for Partial COD (Disabled: adds Remaining COD Balance custom item which doubles order value)
-    if (false && body.payment_method === 'partial_cod' && completeData.draft_order?.order_id) {
+    // 4. Partial COD: draft order is at FULL price (no discount applied by update-draft).
+    // Cashfree collected only the advance amount. Post a Shopify transaction for the advance
+    // so Shopify marks the order as "Partially Paid" with the remaining shown as outstanding.
+    if (body.payment_method === 'partial_cod' && completeData.draft_order?.order_id) {
       try {
         const createdOrderId = completeData.draft_order.order_id;
-        const tags = (draftPayload.tags || '') + ', ' + (existingDraft.tags || '');
-        const advanceTagMatch = tags.match(/Advance_Paid_([0-9.]+)/);
-        let remainingAmount = 0;
-        if (advanceTagMatch) {
-          remainingAmount = parseFloat(advanceTagMatch[1]);
+
+        // Read advance amount from the Advance_Paid_X tag (set by update-draft)
+        const tagsVal = completeData.draft_order.tags || existingDraft.tags || '';
+        const advanceTagMatch = tagsVal.match(/Advance_Paid_([0-9.]+)/);
+        let advancePaid = 0;
+        if (advanceTagMatch && advanceTagMatch[1]) {
+          advancePaid = parseFloat(advanceTagMatch[1]);
         } else if (merchant.payment_settings) {
-          const draftTotal = parseFloat(existingDraft.total_price || '0');
-          let advanceReq = 0;
+          // Fallback: re-calculate from settings
+          const fullTotal = parseFloat(existingDraft.total_price || '0');
           if (merchant.payment_settings.partial_cod_type === 'percent') {
-            advanceReq = (draftTotal * merchant.payment_settings.partial_cod_value) / 100;
+            advancePaid = (fullTotal * merchant.payment_settings.partial_cod_value) / 100;
           } else {
-            advanceReq = merchant.payment_settings.partial_cod_value || 0;
+            advancePaid = merchant.payment_settings.partial_cod_value || 0;
           }
-          remainingAmount = Math.max(0, draftTotal - advanceReq);
         }
 
-        if (remainingAmount > 0) {
-          const graphqlUrl = `${formattedUrl}/admin/api/2024-01/graphql.json`;
-          const gqlHeaders = {
-            'X-Shopify-Access-Token': shopifyToken,
-            'Content-Type': 'application/json'
-          };
-
-          const queryShopify = async (query: string, variables: any) => {
-            const res = await fetch(graphqlUrl, {
-              method: 'POST',
-              headers: gqlHeaders,
-              body: JSON.stringify({ query, variables })
-            });
-            const d = await res.json();
-            if (d.errors) console.error('GraphQL errors:', d.errors);
-            return d.data;
-          };
-
-          const orderGid = `gid://shopify/Order/${createdOrderId}`;
-          const beginRes = await queryShopify(`
-            mutation orderEditBegin($id: ID!) {
-              orderEditBegin(id: $id) {
-                calculatedOrder { id }
-                userErrors { field message }
+        if (advancePaid > 0) {
+          const txRes = await fetch(`${formattedUrl}/admin/api/2024-01/orders/${createdOrderId}/transactions.json`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyToken },
+            body: JSON.stringify({
+              transaction: {
+                amount: advancePaid.toFixed(2),
+                kind: 'capture',
+                status: 'success',
+                gateway: body.cashfree_order_id ? 'Cashfree (Partial COD Advance)' : 'Store Credit (Partial COD Advance)'
               }
-            }
-          `, { id: orderGid });
-
-          const calcId = beginRes?.orderEditBegin?.calculatedOrder?.id;
-          if (calcId) {
-            await queryShopify(`
-              mutation orderEditAddCustomItem($id: ID!, $title: String!, $price: MoneyInput!, $quantity: Int!) {
-                orderEditAddCustomItem(id: $id, title: $title, price: $price, quantity: $quantity) {
-                  calculatedOrder { id }
-                  userErrors { field message }
-                }
-              }
-            `, {
-              id: calcId,
-              title: "Remaining COD Balance",
-              price: { amount: remainingAmount.toFixed(2), currencyCode: "INR" },
-              quantity: 1
-            });
-
-            await queryShopify(`
-              mutation orderEditCommit($id: ID!, $notifyCustomer: Boolean!, $staffNote: String!) {
-                orderEditCommit(id: $id, notifyCustomer: $notifyCustomer, staffNote: $staffNote) {
-                  order { id }
-                  userErrors { field message }
-                }
-              }
-            `, {
-              id: calcId,
-              notifyCustomer: false,
-              staffNote: "Added remaining balance as COD upon order placement."
-            });
-            console.log(`Instant Order Edit applied for Partial COD order ${createdOrderId}`);
+            })
+          });
+          if (!txRes.ok) {
+            const txErr = await txRes.text();
+            console.error('Shopify Partial COD Capture Error:', txRes.status, txErr);
           }
+
+          // Update order note with COD amount to collect on delivery
+          const fullTotal = parseFloat(completeData.draft_order.total_price || existingDraft.total_price || '0');
+          const remainingCod = Math.max(0, fullTotal - advancePaid).toFixed(2);
+          await fetch(`${formattedUrl}/admin/api/2024-01/orders/${createdOrderId}.json`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyToken },
+            body: JSON.stringify({
+              order: {
+                id: createdOrderId,
+                note: `Partial COD Order — Advance Paid Online (Cashfree): ₹${advancePaid.toFixed(2)} | Remaining COD to Collect on Delivery: ₹${remainingCod}`
+              }
+            })
+          });
+          console.log(`Partial COD: advance ₹${advancePaid} posted; remaining COD ₹${remainingCod}`);
         }
       } catch (e) {
-        console.error('Instant Partial COD order edit error:', e);
+        console.error('Failed to process partial COD transaction:', e);
       }
     }
 
@@ -515,9 +501,24 @@ export async function POST(req: Request) {
       })();
     }
 
+    let orderNumberVal = completeData.draft_order.order_id;
+    try {
+      const orderInfoRes = await fetch(`${formattedUrl}/admin/api/2024-01/orders/${completeData.draft_order.order_id}.json`, {
+        headers: { 'X-Shopify-Access-Token': shopifyToken }
+      });
+      if (orderInfoRes.ok) {
+        const orderInfo = await orderInfoRes.json();
+        if (orderInfo.order && orderInfo.order.name) {
+          orderNumberVal = orderInfo.order.name;
+        }
+      }
+    } catch(e) {
+      console.error('Failed to fetch order name from Shopify:', e);
+    }
+
     return NextResponse.json({ 
       success: true, 
-      order_id: completeData.draft_order.order_id,
+      order_id: orderNumberVal,
       message: 'Order created natively in Shopify!'
     }, { headers });
 

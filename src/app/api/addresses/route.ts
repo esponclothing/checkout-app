@@ -132,7 +132,7 @@ export async function POST(req: Request) {
           const customerId = searchData.customers[0].id;
           // 3. Update in Shopify
           const shopifyPayload = {
-            address: {
+            customer_address: {
               first_name: updateData.first_name,
               last_name: updateData.last_name,
               address1: updateData.address1,

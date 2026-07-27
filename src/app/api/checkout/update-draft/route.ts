@@ -48,15 +48,15 @@ export async function POST(req: Request) {
     const draftOrder = draftData.draft_order;
     const totalPrice = parseFloat(draftOrder.total_price);
 
-    // Calculate Payable Amount
-    let orderAmount = totalPrice;
+    // Calculate Payable Amount & Discount
+    let advanceAmount = totalPrice; // for partial_cod: the amount charged online
     let prepaidDiscount = 0;
 
     if (payment_method === 'partial_cod') {
       if (paymentSettings.partial_cod_type === 'percent') {
-        orderAmount = parseFloat(((totalPrice * paymentSettings.partial_cod_value) / 100).toFixed(2));
+        advanceAmount = parseFloat(((totalPrice * paymentSettings.partial_cod_value) / 100).toFixed(2));
       } else {
-        orderAmount = parseFloat(paymentSettings.partial_cod_value.toFixed(2));
+        advanceAmount = parseFloat((paymentSettings.partial_cod_value || 0).toFixed(2));
       }
     } else if (payment_method === 'prepaid' && paymentSettings.prepaid_offer_enabled) {
       if (paymentSettings.prepaid_offer_type === 'percent') {
@@ -64,28 +64,30 @@ export async function POST(req: Request) {
       } else {
         prepaidDiscount = paymentSettings.prepaid_offer_value;
       }
-      // Ensure discount doesn't exceed total
       prepaidDiscount = Math.min(prepaidDiscount, totalPrice);
-      orderAmount = parseFloat((totalPrice - prepaidDiscount).toFixed(2));
     }
 
-    // Now we calculate the additional discount required to hit the target orderAmount
-    const currentDiscountStr = draftOrder.applied_discount ? draftOrder.applied_discount.amount : "0.00";
+    // Existing coupon / promo discount on draft (preserve it)
+    const currentDiscountStr = draftOrder.applied_discount ? draftOrder.applied_discount.amount : '0.00';
     const currentDiscount = parseFloat(currentDiscountStr);
-    
-    // The total price needs to decrease by (totalPrice - orderAmount)
-    const additionalDiscount = totalPrice - orderAmount;
-    const newTotalDiscount = currentDiscount + additionalDiscount;
 
-    let discountTitle = payment_method === 'partial_cod' ? 'Advance Payment (Partial COD)' : 'Prepaid Offer';
-    if (draftOrder.applied_discount && draftOrder.applied_discount.title) {
-        discountTitle = draftOrder.applied_discount.title + ' + ' + discountTitle;
+    // For partial_cod: keep the full order price in Shopify (no discount applied to draft).
+    // The advance is collected via Cashfree; Shopify will show "Partially Paid" after a transaction is posted in complete.
+    // For prepaid: apply the prepaid discount to reduce the order total.
+    let newDiscountValue = currentDiscount;
+    let newDiscountTitle = (draftOrder.applied_discount && draftOrder.applied_discount.title) ? draftOrder.applied_discount.title : '';
+
+    if (payment_method === 'prepaid' && prepaidDiscount > 0) {
+      newDiscountValue = currentDiscount + prepaidDiscount;
+      newDiscountTitle = newDiscountTitle ? `${newDiscountTitle} + Prepaid Offer` : 'Prepaid Offer';
     }
 
     // Update Draft Order in Shopify
     let newTags = draftOrder.tags ? draftOrder.tags : '';
     if (payment_method === 'partial_cod') {
-      const advanceTag = `Advance_Paid_${additionalDiscount.toFixed(2)}`;
+      // Remove any old Advance_Paid tags to avoid duplicates
+      newTags = newTags.replace(/,?\s*Advance_Paid_[0-9.]+/g, '').trim().replace(/^,|,$/g, '').trim();
+      const advanceTag = `Advance_Paid_${advanceAmount.toFixed(2)}`; // stores ADVANCE (amount paid online)
       newTags = newTags ? `${newTags}, ${advanceTag}` : advanceTag;
     }
 
@@ -93,13 +95,24 @@ export async function POST(req: Request) {
       draft_order: {
         id: draft_order_id,
         tags: newTags,
-        applied_discount: {
-          title: discountTitle,
-          value: newTotalDiscount.toFixed(2),
-          value_type: "fixed_amount"
-        }
       }
     };
+
+    // Only set applied_discount if there is a discount to apply (coupon or prepaid)
+    if (newDiscountValue > 0) {
+      updatePayload.draft_order.applied_discount = {
+        title: newDiscountTitle || 'Discount',
+        value: newDiscountValue.toFixed(2),
+        value_type: 'fixed_amount'
+      };
+    } else if (draftOrder.applied_discount && payment_method !== 'partial_cod') {
+      // Clear existing discount only for non-partial-cod payment method changes
+      updatePayload.draft_order.applied_discount = {
+        title: '',
+        value: '0.00',
+        value_type: 'fixed_amount'
+      };
+    }
 
     if (shipping_address) {
       const finalEmail = customer_email || `${customer_phone.replace(/\D/g, '')}@no-email.com`;
@@ -150,7 +163,29 @@ export async function POST(req: Request) {
       }
 
       if (existingCustId) {
-        updatePayload.draft_order.customer = { id: existingCustId };
+        updatePayload.draft_order.customer = { 
+          id: existingCustId,
+          first_name: shipping_address.first_name || '',
+          last_name: shipping_address.last_name || ''
+        };
+        
+        // Sync name to existing customer
+        try {
+          await fetch(`${formattedUrl}/admin/api/2024-01/customers/${existingCustId}.json`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyToken },
+            body: JSON.stringify({
+              customer: {
+                id: existingCustId,
+                first_name: shipping_address.first_name || '',
+                last_name: shipping_address.last_name || ''
+              }
+            })
+          });
+        } catch (e) {
+          console.error('Customer sync error:', e);
+        }
+
       } else {
         updatePayload.draft_order.customer = {
           email: finalEmail,
@@ -178,8 +213,9 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       invoice_url: updateData.draft_order.invoice_url,
-      order_amount: orderAmount
+      order_amount: advanceAmount
     }, { headers });
+
 
   } catch (error: any) {
     console.error('Update Draft Error:', error);

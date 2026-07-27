@@ -56,7 +56,7 @@ export async function POST(req: Request) {
     const SUPABASE_URL = process.env.SUPABASE_URL || '';
     const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || '';
 
-    let cleanStore = shopDomain.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
+    let cleanStore = (shopDomain as string).trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
     
     const merchantRes = await fetch(`${SUPABASE_URL}/rest/v1/saas_merchants?shopify_store_url=eq.${cleanStore}&select=shopify_access_token,payment_settings,name`, {
       headers: {

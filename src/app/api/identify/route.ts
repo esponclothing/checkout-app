@@ -70,8 +70,10 @@ export async function POST(req: Request) {
       masked = `+91-XXXXX-XX${last3}`;
     }
 
-    // Fetch the email if we have it
+    // Fetch the email and store credit balance if we have it
     let email = null;
+    let storeCreditBalance = 0;
+
     const userRes = await fetch(`${supabaseUrl}/rest/v1/network_users?phone=eq.${encodeURIComponent(phone)}&select=email`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
@@ -80,12 +82,53 @@ export async function POST(req: Request) {
       email = users[0].email;
     }
 
+    if (merchants[0].shopify_access_token && merchants[0].shopify_store_url) {
+      try {
+        const cleanStore = merchants[0].shopify_store_url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+        let formattedPhone = phone;
+        if (!formattedPhone.startsWith('+')) formattedPhone = '+91' + formattedPhone;
+
+        const searchRes = await fetch(
+          `https://${cleanStore}/admin/api/2024-04/customers/search.json?query=phone:${encodeURIComponent(formattedPhone)}&limit=1&fields=id`,
+          { headers: { 'X-Shopify-Access-Token': merchants[0].shopify_access_token } }
+        );
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          const customerId = searchData.customers?.[0]?.id;
+          if (customerId) {
+            const balQ = `query {
+              customer(id: "gid://shopify/Customer/${customerId}") {
+                storeCreditAccounts(first: 1) {
+                  edges { node { balance { amount } } }
+                }
+              }
+            }`;
+            const balRes = await fetch(`https://${cleanStore}/admin/api/2024-04/graphql.json`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Shopify-Access-Token': merchants[0].shopify_access_token
+              },
+              body: JSON.stringify({ query: balQ })
+            });
+            if (balRes.ok) {
+              const balData = await balRes.json();
+              const amtStr = balData?.data?.customer?.storeCreditAccounts?.edges?.[0]?.node?.balance?.amount;
+              if (amtStr) storeCreditBalance = parseFloat(amtStr);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Error fetching credit in identify:', e);
+      }
+    }
+
     return NextResponse.json({
       identified: true,
       masked_phone: masked,
       email: email,
+      storeCreditBalance,
       payment_settings
-      // Note: We DO NOT send the address here. Only after OTP.
     }, { headers });
 
   } catch (error) {

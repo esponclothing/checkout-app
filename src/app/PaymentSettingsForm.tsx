@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { Wallet, CreditCard, Banknote, Settings, Palette, Key, Mail, Percent, Type, Info, CheckCircle2, ShieldCheck, ToggleRight, DollarSign, Paintbrush } from 'lucide-react';
+import { Wallet, CreditCard, Banknote, Settings, Palette, Key, Mail, Percent, Type, Info, CheckCircle2, ShieldCheck, ToggleRight, DollarSign, Paintbrush, Divide } from 'lucide-react';
 
 export default function PaymentSettingsForm({ initialSettings }: { initialSettings: any }) {
   const [settings, setSettings] = useState({

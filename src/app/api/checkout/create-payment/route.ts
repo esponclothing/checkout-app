@@ -14,7 +14,7 @@ export async function POST(req: Request) {
   const headers = { 'Access-Control-Allow-Origin': '*' };
   
   try {
-    const { merchant_key, draft_order_id, payment_method, customer_phone, customer_email, customer_name } = await req.json();
+    const { merchant_key, draft_order_id, payment_method, customer_phone, customer_email, customer_name, wallet_credit_amount } = await req.json();
 
     if (!merchant_key || !draft_order_id || !payment_method) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400, headers });
@@ -74,6 +74,12 @@ export async function POST(req: Request) {
       orderAmount = parseFloat((totalPrice - prepaidDiscount).toFixed(2));
     }
 
+    // Deduct Wallet Credit Amount
+    const walletCredit = parseFloat(wallet_credit_amount || '0');
+    if (walletCredit > 0) {
+      orderAmount = parseFloat(Math.max(0, orderAmount - walletCredit).toFixed(2));
+    }
+
     // Create Cashfree Order
     const cashfreeUrl = paymentSettings.cashfree_env === 'production' 
       ? 'https://api.cashfree.com/pg/orders' 
@@ -88,6 +94,9 @@ export async function POST(req: Request) {
         customer_phone: customer_phone ? customer_phone.replace(/\D/g, '') : '9999999999',
         customer_email: customer_email || 'test@example.com',
         customer_name: customer_name || 'Customer'
+      },
+      order_meta: {
+        return_url: `${formattedUrl}/cart?cf_order_id={order_id}&draft_order_id=${draft_order_id}&status={order_status}`
       }
     };
 
