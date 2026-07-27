@@ -30,6 +30,9 @@ export async function POST(req: Request) {
     // Also support fallback checks if needed, but the tag is the most reliable
     const isAdvanceOrder = advanceTagMatch !== null || note.includes('10% Advance Payment Checkout') || discountApps.some((app: any) => app.title && app.title.includes('Advance Payment'));
 
+    // Disabled: Adding Remaining COD Balance custom item doubles the Shopify order total / subtotal.
+    return NextResponse.json({ success: true, message: 'Order edit disabled to prevent double order value' });
+    
     if (!isAdvanceOrder) {
       return NextResponse.json({ success: true, message: 'Not an advance order' });
     }

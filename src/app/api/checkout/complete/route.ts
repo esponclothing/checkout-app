@@ -133,11 +133,13 @@ export async function POST(req: Request) {
           const ec = existingCustData.customer || {};
           const updateFields: any = {};
 
-          // Only update if the field is missing on Shopify side
+          // Always update customer profile name with real name from shipping address
+          if (shipping_address?.first_name) {
+            updateFields.first_name = shipping_address.first_name;
+            updateFields.last_name = shipping_address.last_name || '';
+          }
           if (!ec.email && email) updateFields.email = email;
           if (!ec.phone && formattedPhoneForLookup) updateFields.phone = formattedPhoneForLookup;
-          if (!ec.first_name && shipping_address?.first_name) updateFields.first_name = shipping_address.first_name;
-          if (!ec.last_name && shipping_address?.last_name) updateFields.last_name = shipping_address.last_name;
 
           if (Object.keys(updateFields).length > 0) {
             await fetch(`${formattedUrl}/admin/api/2024-01/customers/${existingCustomerId}.json`, {
@@ -207,17 +209,15 @@ export async function POST(req: Request) {
       };
     }
 
-    // 3. Apply Wallet Credit Discount (if customer used wallet)
+    // 3. Tag and Note Wallet Credit Usage (keeps Order Total accurate in Shopify!)
     if (walletCreditAmount > 0 && merchant.payment_settings?.store_credit_enabled) {
-      let currentDiscountAmt = parseFloat(draftPayload.applied_discount?.amount || existingDraft.applied_discount?.amount || '0');
-      let currentDesc = draftPayload.applied_discount?.description || existingDraft.applied_discount?.description || 'Discount';
-      const totalDiscount = currentDiscountAmt + walletCreditAmount;
-      draftPayload.applied_discount = {
-        description: currentDiscountAmt > 0 ? `${currentDesc} + Wallet Credit` : 'Wallet Credit',
-        value: totalDiscount.toFixed(2),
-        value_type: 'fixed_amount',
-        amount: totalDiscount.toFixed(2)
-      };
+      const existingTags = draftPayload.tags || existingDraft.tags || '';
+      const walletTag = `Store_Credit_Paid_${walletCreditAmount.toFixed(2)}`;
+      draftPayload.tags = existingTags ? `${existingTags}, ${walletTag}` : walletTag;
+
+      const existingNote = draftPayload.note || existingDraft.note || '';
+      const walletNote = `Paid via Store Credit: ₹${walletCreditAmount.toFixed(2)}`;
+      draftPayload.note = existingNote ? `${existingNote} | ${walletNote}` : walletNote;
     }
 
     await fetch(`${formattedUrl}/admin/api/2024-01/draft_orders/${draft_order_id}.json`, {
@@ -232,6 +232,11 @@ export async function POST(req: Request) {
     // 2. Verify Cashfree Payment (if applicable)
     let paymentPending = true;
     let paymentStatus = 'pending';
+
+    if (walletCreditAmount > 0) {
+      paymentPending = false;
+      paymentStatus = 'paid';
+    }
 
     if (body.cashfree_order_id && merchant.payment_settings) {
       const cashfreeUrl = merchant.payment_settings.cashfree_env === 'production' 
@@ -254,7 +259,7 @@ export async function POST(req: Request) {
       
       if (cfData.order_status === 'PAID') {
         paymentStatus = 'paid';
-        paymentPending = body.payment_method === 'partial_cod'; // If partial COD, still pending remainder
+        paymentPending = false; // Cashfree payment successful, we mark it paid here. Webhook adds remainder later.
       } else {
         return NextResponse.json({ error: `Payment not completed. Status: ${cfData.order_status}` }, { status: 400, headers });
       }
@@ -273,6 +278,90 @@ export async function POST(req: Request) {
 
     if (!completeRes.ok) {
       throw new Error(JSON.stringify(completeData));
+    }
+
+    // 4. Instant Order Edit for Partial COD (Disabled: adds Remaining COD Balance custom item which doubles order value)
+    if (false && body.payment_method === 'partial_cod' && completeData.draft_order?.order_id) {
+      try {
+        const createdOrderId = completeData.draft_order.order_id;
+        const tags = (draftPayload.tags || '') + ', ' + (existingDraft.tags || '');
+        const advanceTagMatch = tags.match(/Advance_Paid_([0-9.]+)/);
+        let remainingAmount = 0;
+        if (advanceTagMatch) {
+          remainingAmount = parseFloat(advanceTagMatch[1]);
+        } else if (merchant.payment_settings) {
+          const draftTotal = parseFloat(existingDraft.total_price || '0');
+          let advanceReq = 0;
+          if (merchant.payment_settings.partial_cod_type === 'percent') {
+            advanceReq = (draftTotal * merchant.payment_settings.partial_cod_value) / 100;
+          } else {
+            advanceReq = merchant.payment_settings.partial_cod_value || 0;
+          }
+          remainingAmount = Math.max(0, draftTotal - advanceReq);
+        }
+
+        if (remainingAmount > 0) {
+          const graphqlUrl = `${formattedUrl}/admin/api/2024-01/graphql.json`;
+          const gqlHeaders = {
+            'X-Shopify-Access-Token': shopifyToken,
+            'Content-Type': 'application/json'
+          };
+
+          const queryShopify = async (query: string, variables: any) => {
+            const res = await fetch(graphqlUrl, {
+              method: 'POST',
+              headers: gqlHeaders,
+              body: JSON.stringify({ query, variables })
+            });
+            const d = await res.json();
+            if (d.errors) console.error('GraphQL errors:', d.errors);
+            return d.data;
+          };
+
+          const orderGid = `gid://shopify/Order/${createdOrderId}`;
+          const beginRes = await queryShopify(`
+            mutation orderEditBegin($id: ID!) {
+              orderEditBegin(id: $id) {
+                calculatedOrder { id }
+                userErrors { field message }
+              }
+            }
+          `, { id: orderGid });
+
+          const calcId = beginRes?.orderEditBegin?.calculatedOrder?.id;
+          if (calcId) {
+            await queryShopify(`
+              mutation orderEditAddCustomItem($id: ID!, $title: String!, $price: MoneyInput!, $quantity: Int!) {
+                orderEditAddCustomItem(id: $id, title: $title, price: $price, quantity: $quantity) {
+                  calculatedOrder { id }
+                  userErrors { field message }
+                }
+              }
+            `, {
+              id: calcId,
+              title: "Remaining COD Balance",
+              price: { amount: remainingAmount.toFixed(2), currencyCode: "INR" },
+              quantity: 1
+            });
+
+            await queryShopify(`
+              mutation orderEditCommit($id: ID!, $notifyCustomer: Boolean!, $staffNote: String!) {
+                orderEditCommit(id: $id, notifyCustomer: $notifyCustomer, staffNote: $staffNote) {
+                  order { id }
+                  userErrors { field message }
+                }
+              }
+            `, {
+              id: calcId,
+              notifyCustomer: false,
+              staffNote: "Added remaining balance as COD upon order placement."
+            });
+            console.log(`Instant Order Edit applied for Partial COD order ${createdOrderId}`);
+          }
+        }
+      } catch (e) {
+        console.error('Instant Partial COD order edit error:', e);
+      }
     }
 
     // 5. Debit customer store credit AFTER successful order completion (non-blocking)
