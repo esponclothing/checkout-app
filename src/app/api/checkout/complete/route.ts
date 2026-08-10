@@ -13,9 +13,11 @@ export async function OPTIONS() {
 export async function POST(req: Request) {
   const headers = { 'Access-Control-Allow-Origin': '*' };
   
+  let draft_order_id = '';
   try {
     const body = await req.json();
-    const { merchant_key, draft_order_id, shipping_address, email, phone } = body;
+    draft_order_id = body.draft_order_id;
+    const { merchant_key, shipping_address, email, phone } = body;
     const walletCreditAmount = parseFloat(body.wallet_credit_amount || 0);
 
     if (!merchant_key || !draft_order_id || !shipping_address) {
@@ -40,7 +42,8 @@ export async function POST(req: Request) {
 
     // Fetch merchant Shopify keys
     const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}`, {
-      headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+      headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
+      next: { revalidate: 300 }
     });
     const merchants = await merchantRes.json();
     if (!merchants || merchants.length === 0) {
@@ -86,7 +89,7 @@ export async function POST(req: Request) {
     if (formattedPhoneForLookup) {
       try {
         const searchRes = await fetch(
-          `${formattedUrl}/admin/api/2024-01/customers/search.json?query=phone:${encodeURIComponent(formattedPhoneForLookup)}&limit=1`,
+          `${formattedUrl}/admin/api/2024-04/customers/search.json?query=phone:${encodeURIComponent(formattedPhoneForLookup)}&limit=1`,
           { headers: { 'X-Shopify-Access-Token': shopifyToken } }
         );
         if (searchRes.ok) {
@@ -104,7 +107,7 @@ export async function POST(req: Request) {
     if (!existingCustomerId && email) {
       try {
         const emailSearchRes = await fetch(
-          `${formattedUrl}/admin/api/2024-01/customers/search.json?query=email:${encodeURIComponent(email)}&limit=1`,
+          `${formattedUrl}/admin/api/2024-04/customers/search.json?query=email:${encodeURIComponent(email)}&limit=1`,
           { headers: { 'X-Shopify-Access-Token': shopifyToken } }
         );
         if (emailSearchRes.ok) {
@@ -125,7 +128,7 @@ export async function POST(req: Request) {
       // ─── PATCH: Fill in any missing phone/email/name on the existing customer ──
       try {
         const existingCustRes = await fetch(
-          `${formattedUrl}/admin/api/2024-01/customers/${existingCustomerId}.json`,
+          `${formattedUrl}/admin/api/2024-04/customers/${existingCustomerId}.json`,
           { headers: { 'X-Shopify-Access-Token': shopifyToken } }
         );
         if (existingCustRes.ok) {
@@ -142,7 +145,7 @@ export async function POST(req: Request) {
           if (!ec.phone && formattedPhoneForLookup) updateFields.phone = formattedPhoneForLookup;
 
           if (Object.keys(updateFields).length > 0) {
-            await fetch(`${formattedUrl}/admin/api/2024-01/customers/${existingCustomerId}.json`, {
+            await fetch(`${formattedUrl}/admin/api/2024-04/customers/${existingCustomerId}.json`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyToken },
               body: JSON.stringify({ customer: updateFields })
@@ -166,9 +169,39 @@ export async function POST(req: Request) {
     
     if (email) draftPayload.email = email;
 
+    // Attach shipping address so that WhatsApp API and Shopify have it correctly!
+    if (shipping_address) {
+      let finalAddress2 = shipping_address.address2 || '';
+      let finalCompany = shipping_address.company || '';
+      
+      if (finalAddress2.includes('District: ')) {
+        const parts = finalAddress2.split(/\s*\|?\s*District:\s*/);
+        if (parts.length > 1) {
+            finalAddress2 = parts[0].trim();
+            finalCompany = parts[1].trim();
+        }
+      }
+
+      const shopifyAddress = {
+        first_name: shipping_address.first_name || '',
+        last_name: shipping_address.last_name || '',
+        address1: shipping_address.address1 || '',
+        address2: finalAddress2,
+        city: shipping_address.city || '',
+        province: shipping_address.province || '',
+        country: shipping_address.country || 'India',
+        zip: shipping_address.zip || '',
+        phone: formattedPhoneForLookup || '',
+        company: finalCompany
+      };
+      
+      draftPayload.shipping_address = shopifyAddress;
+      draftPayload.billing_address = shopifyAddress;
+    }
+
 
     // Fetch current draft order to preserve line items and existing discounts
-    const getDraftRes = await fetch(`${formattedUrl}/admin/api/2024-01/draft_orders/${draft_order_id}.json`, {
+    const getDraftRes = await fetch(`${formattedUrl}/admin/api/2024-04/draft_orders/${draft_order_id}.json`, {
       headers: { 'X-Shopify-Access-Token': shopifyToken }
     });
     const existingDraftData = await getDraftRes.json();
@@ -187,27 +220,10 @@ export async function POST(req: Request) {
       ];
     }
 
-    // 2. Apply Prepaid Discount (Combined with existing coupon if any)
-    if (body.payment_method === 'prepaid' && merchant.payment_settings?.prepaid_offer_enabled) {
-      let currentDiscountAmt = parseFloat(existingDraft.applied_discount?.amount || '0');
-      let currentDesc = existingDraft.applied_discount?.description || 'Discount';
+    // NOTE: Prepaid discount is already applied to the draft by update-draft/route.ts
+    // before the Cashfree payment session is created. Do NOT apply it again here
+    // or it will double-discount the order (e.g. 5% off the already-5%-discounted total).
 
-      let newDiscountAmt = 0;
-      if (merchant.payment_settings.prepaid_offer_type === 'percent') {
-        newDiscountAmt = (parseFloat(existingDraft.total_price) * merchant.payment_settings.prepaid_offer_value) / 100;
-      } else {
-        newDiscountAmt = merchant.payment_settings.prepaid_offer_value;
-      }
-
-      let totalDiscount = currentDiscountAmt + newDiscountAmt;
-
-      draftPayload.applied_discount = {
-        description: currentDiscountAmt > 0 ? `${currentDesc} + Prepaid Offer` : `Prepaid Offer`,
-        value: `${totalDiscount.toFixed(2)}`,
-        value_type: 'fixed_amount',
-        amount: `${totalDiscount.toFixed(2)}`
-      };
-    }
 
     // 3. Tag and Note Wallet Credit Usage (keeps Order Total accurate in Shopify!)
     if (walletCreditAmount > 0 && merchant.payment_settings?.store_credit_enabled) {
@@ -220,7 +236,7 @@ export async function POST(req: Request) {
       draftPayload.note = existingNote ? `${existingNote} | ${walletNote}` : walletNote;
     }
 
-    await fetch(`${formattedUrl}/admin/api/2024-01/draft_orders/${draft_order_id}.json`, {
+    const putDraftRes = await fetch(`${formattedUrl}/admin/api/2024-04/draft_orders/${draft_order_id}.json`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -228,6 +244,10 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({ draft_order: draftPayload })
     });
+    if (!putDraftRes.ok) {
+       const errData = await putDraftRes.json();
+       console.error("Failed to update Draft Order before completing:", JSON.stringify(errData));
+    }
 
     // 2. Verify Cashfree Payment (if applicable)
     let paymentPending = true;
@@ -259,23 +279,27 @@ export async function POST(req: Request) {
       
       if (cfData.order_status === 'PAID') {
         paymentStatus = 'paid';
-        // For partial_cod: draft order is at FULL price; payment_pending=true so Shopify marks it Unpaid.
-        // We then post a transaction for the advance amount → Shopify shows "Partially Paid".
-        paymentPending = body.payment_method === 'partial_cod' ? true : false;
+        if (body.payment_method === 'prepaid') {
+          paymentPending = false; // Prepaid is fully paid online -> Shopify marks order as PAID!
+        } else {
+          paymentPending = true; // Partial COD -> payment_pending=true so we can post advance transaction
+        }
       } else {
         return NextResponse.json({ error: `Payment not completed. Status: ${cfData.order_status}` }, { status: 400, headers });
       }
     }
 
-    // Ensure payment_pending is ALWAYS true when completing a draft order for partial_cod or cod,
-    // regardless of walletCreditAmount or any other flag. This prevents Shopify from marking the
-    // full order price as "Paid".
+    // Ensure payment_pending is ALWAYS true when completing a draft order for partial_cod or cod
     if (body.payment_method === 'partial_cod' || body.payment_method === 'cod') {
       paymentPending = true;
     }
 
     // 3. Complete the Draft Order
-    const completeRes = await fetch(`${formattedUrl}/admin/api/2024-01/draft_orders/${draft_order_id}/complete.json?payment_pending=${paymentPending}`, {
+    const completeUrl = paymentPending 
+      ? `${formattedUrl}/admin/api/2024-04/draft_orders/${draft_order_id}/complete.json?payment_pending=true`
+      : `${formattedUrl}/admin/api/2024-04/draft_orders/${draft_order_id}/complete.json`;
+
+    const completeRes = await fetch(completeUrl, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -283,10 +307,46 @@ export async function POST(req: Request) {
       }
     });
 
-    const completeData = await completeRes.json();
+    let completeData = await completeRes.json();
 
     if (!completeRes.ok) {
-      throw new Error(JSON.stringify(completeData));
+      const errStr = JSON.stringify(completeData);
+      if (errStr.includes('already completed') || errStr.includes('Draft order has been completed') || errStr.includes('This order has been paid')) {
+        console.log('Order already completed by webhook. Fetching actual order ID to continue side effects.');
+        // Fetch draft order to get the actual order_id
+        const getDraft = await fetch(`${formattedUrl}/admin/api/2024-04/draft_orders/${draft_order_id}.json`, {
+          headers: { 'X-Shopify-Access-Token': shopifyToken }
+        });
+        const draftData = await getDraft.json();
+        if (draftData.draft_order && draftData.draft_order.order_id) {
+          completeData = draftData; // Mock it so the rest of the code works!
+          
+          // Since the draft order PUT (at line 225) might have failed due to it being already completed,
+          // we need to explicitly apply the wallet tags and notes to the actual order now!
+          if (walletCreditAmount > 0) {
+            const existingTags = draftData.draft_order.tags || '';
+            const walletTag = `Store_Credit_Paid_${walletCreditAmount.toFixed(2)}`;
+            const newTags = existingTags ? `${existingTags}, ${walletTag}` : walletTag;
+            
+            const existingNote = draftData.draft_order.note || '';
+            const walletNote = `Paid via Store Credit: ₹${walletCreditAmount.toFixed(2)}`;
+            const newNote = existingNote ? `${existingNote} | ${walletNote}` : walletNote;
+
+            await fetch(`${formattedUrl}/admin/api/2024-04/orders/${draftData.draft_order.order_id}.json`, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Shopify-Access-Token': shopifyToken
+              },
+              body: JSON.stringify({ order: { id: draftData.draft_order.order_id, tags: newTags, note: newNote } })
+            });
+          }
+        } else {
+          throw new Error(errStr);
+        }
+      } else {
+        throw new Error(errStr);
+      }
     }
 
     // 4. Partial COD: draft order is at FULL price (no discount applied by update-draft).
@@ -313,15 +373,16 @@ export async function POST(req: Request) {
         }
 
         if (advancePaid > 0) {
-          const txRes = await fetch(`${formattedUrl}/admin/api/2024-01/orders/${createdOrderId}/transactions.json`, {
+          const txRes = await fetch(`${formattedUrl}/admin/api/2024-04/orders/${createdOrderId}/transactions.json`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyToken },
             body: JSON.stringify({
               transaction: {
                 amount: advancePaid.toFixed(2),
-                kind: 'capture',
+                kind: 'sale',
                 status: 'success',
-                gateway: body.cashfree_order_id ? 'Cashfree (Partial COD Advance)' : 'Store Credit (Partial COD Advance)'
+                gateway: body.cashfree_order_id ? 'Cashfree' : 'Store Credit',
+                currency: existingDraft.currency || 'INR'
               }
             })
           });
@@ -333,7 +394,7 @@ export async function POST(req: Request) {
           // Update order note with COD amount to collect on delivery
           const fullTotal = parseFloat(completeData.draft_order.total_price || existingDraft.total_price || '0');
           const remainingCod = Math.max(0, fullTotal - advancePaid).toFixed(2);
-          await fetch(`${formattedUrl}/admin/api/2024-01/orders/${createdOrderId}.json`, {
+          await fetch(`${formattedUrl}/admin/api/2024-04/orders/${createdOrderId}.json`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyToken },
             body: JSON.stringify({
@@ -350,9 +411,61 @@ export async function POST(req: Request) {
       }
     }
 
+    // 4.5 Prepaid: explicitly post transaction(s) to attach gateway names properly
+    if (body.payment_method === 'prepaid' && completeData.draft_order?.order_id) {
+      try {
+        const createdOrderId = completeData.draft_order.order_id;
+        const fullTotal = parseFloat(completeData.draft_order.total_price || existingDraft.total_price || '0');
+        const cashfreeAmount = fullTotal - walletCreditAmount;
+
+        // Post Cashfree transaction if there was an online payment portion
+        if (cashfreeAmount > 0 && body.cashfree_order_id) {
+          const txRes = await fetch(`${formattedUrl}/admin/api/2024-04/orders/${createdOrderId}/transactions.json`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyToken },
+            body: JSON.stringify({
+              transaction: {
+                amount: cashfreeAmount.toFixed(2),
+                kind: 'sale',
+                status: 'success',
+                gateway: 'Cashfree (Online)',
+                currency: existingDraft.currency || 'INR'
+              }
+            })
+          });
+          if (!txRes.ok) {
+            console.error('CASHFREE TRANSACTION ERROR:', await txRes.text());
+          }
+        }
+        
+        // Post Store Credit transaction if wallet credit was used
+        if (walletCreditAmount > 0) {
+          const txResWallet = await fetch(`${formattedUrl}/admin/api/2024-04/orders/${createdOrderId}/transactions.json`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyToken },
+            body: JSON.stringify({
+              transaction: {
+                amount: walletCreditAmount.toFixed(2),
+                kind: 'sale',
+                status: 'success',
+                gateway: 'Store Credit',
+                currency: existingDraft.currency || 'INR'
+              }
+            })
+          });
+          if (!txResWallet.ok) {
+            console.error('STORE CREDIT TRANSACTION ERROR:', await txResWallet.text());
+          }
+        }
+      } catch (e) {
+        console.error('Failed to process prepaid transactions:', e);
+      }
+    }
+
+    const backgroundTasks: any[] = [];
     // 5. Debit customer store credit AFTER successful order completion (non-blocking)
     if (walletCreditAmount > 0 && existingCustomerId && merchant.payment_settings?.store_credit_enabled) {
-      (async () => {
+      backgroundTasks.push((async () => {
         try {
           const graphqlUrl = `${formattedUrl}/admin/api/2024-04/graphql.json`;
           const gqlHeaders = { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyToken };
@@ -390,7 +503,141 @@ export async function POST(req: Request) {
             });
           }
         } catch(e) { console.error('Post-order wallet debit error (non-fatal):', e); }
-      })();
+      })());
+    }
+
+    // 5.5 Give Prepaid Cashback Store Credit (non-blocking)
+    if (body.payment_method === 'prepaid' && merchant.payment_settings?.cashback_enabled && existingCustomerId && completeData.draft_order) {
+      backgroundTasks.push((async () => {
+        try {
+          // Calculate cashback amount
+          const paidAmount = parseFloat(completeData.draft_order.total_price || existingDraft.total_price || '0');
+          const orderTotal = paidAmount;
+          
+          let cashbackAmt = 0;
+          if (merchant.payment_settings.cashback_type === 'percent') {
+            cashbackAmt = (orderTotal * merchant.payment_settings.cashback_value) / 100;
+          } else {
+            cashbackAmt = merchant.payment_settings.cashback_value;
+          }
+
+          if (cashbackAmt > 0) {
+            const customerIdClean = String(existingCustomerId).replace('gid://shopify/Customer/', '');
+            const customerGid = `gid://shopify/Customer/${customerIdClean}`;
+            const graphqlUrl = `${formattedUrl}/admin/api/2024-04/graphql.json`;
+            const shopifyHeaders = { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyToken };
+
+            // Fetch existing store credit account
+            const fetchQ = `query { customer(id: "${customerGid}") { storeCreditAccounts(first: 1) { edges { node { id } } } } }`;
+            const fetchRes = await fetch(graphqlUrl, { method: 'POST', headers: shopifyHeaders, body: JSON.stringify({ query: fetchQ }) });
+            const fetchData = await fetchRes.json();
+            let storeCreditAccountId = fetchData.data?.customer?.storeCreditAccounts?.edges?.[0]?.node?.id;
+
+            // If no account, create one via REST API
+            if (!storeCreditAccountId) {
+              const createRes = await fetch(`${formattedUrl}/admin/api/2024-04/customers/${customerIdClean}/store_credit_accounts.json`, {
+                method: 'POST', headers: shopifyHeaders, body: JSON.stringify({ store_credit_account: {} })
+              });
+              if (createRes.ok) {
+                const createData = await createRes.json();
+                if (createData.store_credit_account?.id) {
+                  storeCreditAccountId = `gid://shopify/StoreCreditAccount/${createData.store_credit_account.id}`;
+                }
+              }
+            }
+
+            if (storeCreditAccountId) {
+              // Credit the account
+              const creditMutation = `mutation storeCreditAccountCredit($id: ID!, $creditInput: StoreCreditAccountCreditInput!) {
+                storeCreditAccountCredit(id: $id, creditInput: $creditInput) {
+                  userErrors { field message }
+                }
+              }`;
+              await fetch(graphqlUrl, {
+                method: 'POST', headers: shopifyHeaders,
+                body: JSON.stringify({
+                  query: creditMutation,
+                  variables: { id: storeCreditAccountId, creditInput: { creditAmount: { amount: cashbackAmt.toFixed(2), currencyCode: 'INR' } } }
+                })
+              });
+
+              // Add a note to the order
+              if (completeData.draft_order?.order_id) {
+                try {
+                  const createdOrderId = completeData.draft_order.order_id;
+                  // Fetch existing order to append to note
+                  const getOrderRes = await fetch(`${formattedUrl}/admin/api/2024-04/orders/${createdOrderId}.json`, {
+                    headers: { 'X-Shopify-Access-Token': shopifyToken }
+                  });
+                  const orderData = await getOrderRes.json();
+                  const existingNote = orderData.order?.note || '';
+                  const cashbackNote = `Added ₹${cashbackAmt.toFixed(2)} Cashback for this Prepaid order to Customer's Store Credit Wallet.`;
+                  const newNote = existingNote ? `${existingNote}\n${cashbackNote}` : cashbackNote;
+
+                  await fetch(`${formattedUrl}/admin/api/2024-04/orders/${createdOrderId}.json`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyToken },
+                    body: JSON.stringify({
+                      order: {
+                        id: createdOrderId,
+                        note: newNote
+                      }
+                    })
+                  });
+                } catch(e) { console.error('Error adding cashback note to order:', e); }
+              }
+
+              // Log the credit in wallet_notes metafield
+              const orderIdStr = completeData.draft_order.order_id || draft_order_id;
+              const noteEntry = JSON.stringify([{ timestamp: new Date().toISOString(), type: 'credit', amount: cashbackAmt.toFixed(2), reason: `Prepaid Cashback for Order #${orderIdStr}` }]);
+              const mfMut = `mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $metafields) { userErrors { message } } }`;
+              await fetch(graphqlUrl, {
+                method: 'POST', headers: shopifyHeaders,
+                body: JSON.stringify({ query: mfMut, variables: { metafields: [{ ownerId: customerGid, namespace: 'custom', key: 'wallet_notes', type: 'json', value: noteEntry }] } })
+              });
+              console.log(`Successfully credited ₹${cashbackAmt} to ${customerGid} for Prepaid Order`);
+              
+              // Trigger WhatsApp Cashback Notification
+              if (merchant.payment_settings?.wa_workflows?.store_credit_cashback?.enabled && actualPhone && actualPhone !== 'MASKED') {
+                const cbWf = merchant.payment_settings.wa_workflows.store_credit_cashback;
+                if (cbWf.template_name) {
+                  let sendPhone = actualPhone.replace(/\D/g, '');
+                  if (sendPhone.length === 10) sendPhone = '91' + sendPhone;
+                  const waSettings = merchant.payment_settings || {};
+                  const META_TOKEN = waSettings.wa_access_token || process.env.META_ACCESS_TOKEN;
+                  const PHONE_NUMBER_ID = waSettings.wa_phone_number_id || process.env.PHONE_NUMBER_ID;
+                  
+                  if (META_TOKEN && PHONE_NUMBER_ID) {
+                    await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
+                      method: 'POST',
+                      headers: { 'Authorization': `Bearer ${META_TOKEN}`, 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        messaging_product: 'whatsapp',
+                        recipient_type: 'individual',
+                        to: sendPhone,
+                        type: 'template',
+                        template: {
+                          name: cbWf.template_name,
+                          language: { code: 'en_US' },
+                          components: [
+                            {
+                              type: 'body',
+                              parameters: [
+                                { type: 'text', text: cashbackAmt.toFixed(0) },
+                                { type: 'text', text: orderIdStr }
+                              ]
+                            }
+                          ]
+                        }
+                      })
+                    }).catch(e => console.error('Cashback WA error', e));
+                  }
+                }
+              }
+            }
+          }
+        } catch(e) { console.error('Post-order prepaid cashback error (non-fatal):', e); }
+      })());
     }
 
     // 6. Update checkout_sessions status to completed
@@ -407,32 +654,29 @@ export async function POST(req: Request) {
     }
 
     // 4. Trigger Order Confirmation WhatsApp (Non-blocking)
-    if (merchant.payment_settings?.wa_workflows?.order_confirmation?.enabled && body.payment_method !== 'partial_cod') {
-      (async () => {
+    if (merchant.payment_settings?.wa_workflows?.order_confirmation?.template_name && body.payment_method !== 'partial_cod') {
+      backgroundTasks.push((async () => {
         try {
           const workflows = merchant.payment_settings.wa_workflows.order_confirmation;
-          if (!workflows.template_name || !actualPhone || actualPhone === 'MASKED') return;
+          const phoneToUse = body.phone || shipping_address?.phone || actualPhone;
+          if (!workflows.template_name || !phoneToUse || phoneToUse === 'MASKED') return;
 
-          let sendPhone = actualPhone.replace(/\D/g, '');
+          let sendPhone = String(phoneToUse).replace(/\D/g, '');
           if (sendPhone.length === 10) sendPhone = '91' + sendPhone;
           
           const waSettings = merchant.payment_settings || {};
           const META_TOKEN = waSettings.wa_access_token || process.env.META_ACCESS_TOKEN || 'EAAM99yhroGsBR1rm4kaPOHQRtcuoMjZAdpcz2F4K1AXjYYfvtGLwttdBMO2fdaUI4lzB0fG0iaZAabFdgP9aA4GCXtw0t4zLmwZBg0ShVCJBZBYZBVYnmGkb2f9XZAXcD9evV1hoAcF9DGfSYtTCfTzzcC9iZCmWZBTiyMZC4ZBnmvOVqPfE1ZCJE3Lc3ZBs3egltQZDZD';
           const PHONE_NUMBER_ID = waSettings.wa_phone_number_id || process.env.PHONE_NUMBER_ID || '1189183190949431';
           
-          let dynamicParams: any[] = [];
-          const regex = /{{[a-z_]+}}/g;
-          const matches = workflows.body_text?.match(regex) || [];
-          
-          const customerName = shipping_address.first_name || 'there';
-          const firstItem = existingDraft.line_items[0] || {};
-          const productName = firstItem.title || 'your items';
-          const totalAmount = existingDraft.total_price ? `₹${parseFloat(existingDraft.total_price).toFixed(0)}` : 'your items';
-          const itemCount = existingDraft.line_items.length;
+          const customerName = shipping_address?.first_name || 'Customer';
+          const firstItem = existingDraft?.line_items?.[0] || {};
+          const productName = firstItem.title || 'your order';
+          const totalAmount = existingDraft?.total_price ? `₹${parseFloat(existingDraft.total_price).toFixed(0)}` : 'your items';
+          const itemCount = existingDraft?.line_items?.length || 1;
           let orderIdStr = completeData.draft_order?.order_id || draft_order_id;
           if (completeData.draft_order?.order_id) {
             try {
-              const orderRes = await fetch(`${formattedUrl}/admin/api/2024-01/orders/${completeData.draft_order.order_id}.json?fields=name,order_number`, {
+              const orderRes = await fetch(`${formattedUrl}/admin/api/2024-04/orders/${completeData.draft_order.order_id}.json?fields=name,order_number`, {
                 headers: { 'X-Shopify-Access-Token': shopifyToken }
               });
               const orderData = await orderRes.json();
@@ -442,27 +686,43 @@ export async function POST(req: Request) {
             } catch(e) {}
           }
           
-          if (workflows.template_name === 'order') {
-            dynamicParams.push({ type: 'text', text: customerName });
-            dynamicParams.push({ type: 'text', text: productName });
-            dynamicParams.push({ type: 'text', text: String(totalAmount) });
-            dynamicParams.push({ type: 'text', text: String(orderIdStr) });
+          let dynamicParams: any[] = [];
+          const bodyText = workflows.body_text || '';
+          
+          if (workflows.template_name === 'order' || bodyText.includes('{{1}}')) {
+            dynamicParams = [
+              { type: 'text', text: String(customerName) },
+              { type: 'text', text: String(productName) },
+              { type: 'text', text: String(totalAmount) },
+              { type: 'text', text: String(orderIdStr) }
+            ];
           } else {
+            const regex = /{{[a-zA-Z0-9_]+}}/g;
+            const matches = bodyText.match(regex) || [];
             for (const match of matches) {
-              if (match === '{{store_name}}') dynamicParams.push({ type: 'text', text: merchant.name });
-              else if (match === '{{customer_name}}') dynamicParams.push({ type: 'text', text: customerName });
-              else if (match === '{{customer_phone}}') dynamicParams.push({ type: 'text', text: sendPhone });
-              else if (match === '{{product_name}}') dynamicParams.push({ type: 'text', text: productName });
-              else if (match === '{{total_price}}') dynamicParams.push({ type: 'text', text: String(totalAmount) });
+              if (match === '{{store_name}}') dynamicParams.push({ type: 'text', text: String(merchant.name || '11Fit') });
+              else if (match === '{{customer_name}}' || match === '{{1}}') dynamicParams.push({ type: 'text', text: String(customerName) });
+              else if (match === '{{customer_phone}}') dynamicParams.push({ type: 'text', text: String(sendPhone) });
+              else if (match === '{{product_name}}' || match === '{{2}}') dynamicParams.push({ type: 'text', text: String(productName) });
+              else if (match === '{{total_price}}' || match === '{{3}}') dynamicParams.push({ type: 'text', text: String(totalAmount) });
               else if (match === '{{item_count}}') dynamicParams.push({ type: 'text', text: String(itemCount) });
-              else if (match === '{{order_id}}') dynamicParams.push({ type: 'text', text: String(orderIdStr) });
+              else if (match === '{{order_id}}' || match === '{{4}}') dynamicParams.push({ type: 'text', text: String(orderIdStr) });
+              else dynamicParams.push({ type: 'text', text: String(customerName) });
             }
+          }
+
+          if (dynamicParams.length === 0) {
+            dynamicParams = [
+              { type: 'text', text: String(customerName) },
+              { type: 'text', text: String(productName) },
+              { type: 'text', text: String(totalAmount) },
+              { type: 'text', text: String(orderIdStr) }
+            ];
           }
 
           const components: any[] = [];
           
           if (workflows.header_type === 'image') {
-            // Shopify Draft Orders API doesn't return line item images. We use a placeholder if unavailable.
             const imgLink = firstItem.image?.src || 'https://via.placeholder.com/600?text=Order+Confirmed';
             components.push({
               type: 'header',
@@ -470,23 +730,10 @@ export async function POST(req: Request) {
             });
           }
 
-          if (dynamicParams.length > 0) {
-            components.push({ type: 'body', parameters: dynamicParams });
-          }
-          
-          // Order status URL for button if needed
-          const orderStatusUrl = completeData.draft_order?.order_status_url;
-          if (orderStatusUrl) {
-            try {
-              const url = new URL(orderStatusUrl);
-              components.push({
-                type: 'button', sub_type: 'url', index: '0',
-                parameters: [ { type: 'text', text: (url.pathname + url.search).substring(1) } ]
-              });
-            } catch(e) {}
-          }
+          components.push({ type: 'body', parameters: dynamicParams });
 
-          await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
+          // Try sending with en_US first, fallback to en if needed
+          let sendRes = await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${META_TOKEN}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -494,16 +741,36 @@ export async function POST(req: Request) {
               recipient_type: 'individual',
               to: sendPhone,
               type: 'template',
-              template: { name: workflows.template_name, language: { code: 'en' }, components }
+              template: { name: workflows.template_name, language: { code: 'en_US' }, components }
             })
           });
+
+          if (!sendRes.ok) {
+            const errJson = await sendRes.json();
+            console.error('WhatsApp Confirmation Send Error (en_US):', JSON.stringify(errJson));
+            sendRes = await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${META_TOKEN}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                messaging_product: 'whatsapp',
+                recipient_type: 'individual',
+                to: sendPhone,
+                type: 'template',
+                template: { name: workflows.template_name, language: { code: 'en' }, components }
+              })
+            });
+            if (!sendRes.ok) {
+              const errJson2 = await sendRes.json();
+              console.error('WhatsApp Confirmation Send Error (en):', JSON.stringify(errJson2));
+            }
+          }
         } catch(e) { console.error('Failed to send WhatsApp Order Confirmation', e); }
-      })();
+      })());
     }
 
     let orderNumberVal = completeData.draft_order.order_id;
     try {
-      const orderInfoRes = await fetch(`${formattedUrl}/admin/api/2024-01/orders/${completeData.draft_order.order_id}.json`, {
+      const orderInfoRes = await fetch(`${formattedUrl}/admin/api/2024-04/orders/${completeData.draft_order.order_id}.json`, {
         headers: { 'X-Shopify-Access-Token': shopifyToken }
       });
       if (orderInfoRes.ok) {
@@ -516,19 +783,20 @@ export async function POST(req: Request) {
       console.error('Failed to fetch order name from Shopify:', e);
     }
 
+    await Promise.allSettled(backgroundTasks);
+
     return NextResponse.json({ 
       success: true, 
       order_id: orderNumberVal,
       message: 'Order created natively in Shopify!'
     }, { headers });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Complete API Error:', error);
-    // For prototype purposes, return mock success
+
     return NextResponse.json({ 
-      success: true, 
-      order_id: 123456789,
-      message: 'Mock Order created (Shopify keys missing).'
-    }, { headers });
+      success: false,
+      error: error.message
+    }, { status: 500, headers });
   }
 }
