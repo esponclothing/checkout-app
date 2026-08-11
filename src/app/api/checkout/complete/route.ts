@@ -55,6 +55,60 @@ export async function POST(req: Request) {
     let formattedUrl = shopifyUrl.startsWith('http') ? shopifyUrl : `https://${shopifyUrl}`;
     const shopifyToken = merchant.shopify_access_token || process.env.VITE_SHOPIFY_ACCESS_TOKEN;
 
+    // --- IDEMPOTENCY LOCK: Prevent Double-Spends ---
+    const checkRes = await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?draft_order_id=eq.${draft_order_id}&select=id,status`, {
+      headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+    });
+    const existingSessions = await checkRes.json();
+    
+    if (existingSessions && existingSessions.length > 0) {
+      const session = existingSessions[0];
+      if (session.status === 'completed' || session.status === 'processing') {
+         console.warn(`[Idempotency] Rejecting complete for ${draft_order_id}, status is ${session.status}`);
+         // The webhook has already picked it up or completed it.
+         // Return 200 so the frontend shows the success screen instead of an error!
+         return NextResponse.json({ message: 'Order is already processing or completed', already_completed: true }, { status: 200, headers });
+      }
+      
+      // Attempt to acquire lock atomically
+      const lockRes = await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?id=eq.${session.id}&status=eq.${session.status}`, {
+        method: 'PATCH',
+        headers: { 
+          'apikey': supabaseKey, 
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify({ status: 'processing', updated_at: new Date().toISOString() })
+      });
+      const locked = await lockRes.json();
+      if (!locked || locked.length === 0) {
+         console.warn(`[Idempotency] Failed to acquire lock for ${draft_order_id}`);
+         return NextResponse.json({ error: 'Order is already processing' }, { status: 429, headers });
+      }
+    } else {
+      // Insert new session with processing status
+      const insertRes = await fetch(`${supabaseUrl}/rest/v1/checkout_sessions`, {
+        method: 'POST',
+        headers: { 
+          'apikey': supabaseKey, 
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+           merchant_id: merchant.id,
+           draft_order_id: draft_order_id,
+           status: 'processing',
+           device_id: body.device_id || 'unknown'
+        })
+      });
+      if (!insertRes.ok) {
+         console.warn(`[Idempotency] Failed to insert session for ${draft_order_id}`);
+         return NextResponse.json({ error: 'Order is already processing' }, { status: 429, headers });
+      }
+    }
+    // --- END IDEMPOTENCY LOCK ---
+
     // Make sure shipping address has the phone number strictly mapped!
     const formattedPhone = actualPhone && actualPhone !== 'MASKED' ? (actualPhone.startsWith('+') ? actualPhone : `+91${actualPhone.replace(/\D/g, '')}`) : undefined;
     
@@ -236,6 +290,13 @@ export async function POST(req: Request) {
       draftPayload.note = existingNote ? `${existingNote} | ${walletNote}` : walletNote;
     }
 
+    // Add Cashfree Note
+    if (body.cashfree_order_id && body.payment_method === 'prepaid') {
+      const existingNote = draftPayload.note || existingDraft.note || '';
+      const cfNote = `Paid via Cashfree (Online) - Transaction ID: ${body.cashfree_order_id}`;
+      draftPayload.note = existingNote ? `${existingNote} | ${cfNote}` : cfNote;
+    }
+
     const putDraftRes = await fetch(`${formattedUrl}/admin/api/2024-04/draft_orders/${draft_order_id}.json`, {
       method: 'PUT',
       headers: {
@@ -297,7 +358,7 @@ export async function POST(req: Request) {
     // 3. Complete the Draft Order
     const completeUrl = paymentPending 
       ? `${formattedUrl}/admin/api/2024-04/draft_orders/${draft_order_id}/complete.json?payment_pending=true`
-      : `${formattedUrl}/admin/api/2024-04/draft_orders/${draft_order_id}/complete.json`;
+      : `${formattedUrl}/admin/api/2024-04/draft_orders/${draft_order_id}/complete.json?payment_pending=false`;
 
     const completeRes = await fetch(completeUrl, {
       method: 'PUT',
@@ -322,23 +383,34 @@ export async function POST(req: Request) {
           completeData = draftData; // Mock it so the rest of the code works!
           
           // Since the draft order PUT (at line 225) might have failed due to it being already completed,
-          // we need to explicitly apply the wallet tags and notes to the actual order now!
-          if (walletCreditAmount > 0) {
-            const existingTags = draftData.draft_order.tags || '';
-            const walletTag = `Store_Credit_Paid_${walletCreditAmount.toFixed(2)}`;
-            const newTags = existingTags ? `${existingTags}, ${walletTag}` : walletTag;
-            
-            const existingNote = draftData.draft_order.note || '';
-            const walletNote = `Paid via Store Credit: ₹${walletCreditAmount.toFixed(2)}`;
-            const newNote = existingNote ? `${existingNote} | ${walletNote}` : walletNote;
+          // we need to explicitly apply the wallet tags and notes, and the Cashfree Note, to the actual order now!
+          let finalTags = draftData.draft_order.tags || '';
+          let finalNote = draftData.draft_order.note || '';
+          let shouldUpdateOrder = false;
 
+          if (walletCreditAmount > 0) {
+            const walletTag = `Store_Credit_Paid_${walletCreditAmount.toFixed(2)}`;
+            finalTags = finalTags ? `${finalTags}, ${walletTag}` : walletTag;
+            
+            const walletNote = `Paid via Store Credit: ₹${walletCreditAmount.toFixed(2)}`;
+            finalNote = finalNote ? `${finalNote} | ${walletNote}` : walletNote;
+            shouldUpdateOrder = true;
+          }
+
+          if (body.cashfree_order_id && body.payment_method === 'prepaid') {
+            const cfNote = `Paid via Cashfree (Online) - Transaction ID: ${body.cashfree_order_id}`;
+            finalNote = finalNote ? `${finalNote} | ${cfNote}` : cfNote;
+            shouldUpdateOrder = true;
+          }
+
+          if (shouldUpdateOrder) {
             await fetch(`${formattedUrl}/admin/api/2024-04/orders/${draftData.draft_order.order_id}.json`, {
               method: 'PUT',
               headers: {
                 'Content-Type': 'application/json',
                 'X-Shopify-Access-Token': shopifyToken
               },
-              body: JSON.stringify({ order: { id: draftData.draft_order.order_id, tags: newTags, note: newNote } })
+              body: JSON.stringify({ order: { id: draftData.draft_order.order_id, tags: finalTags, note: finalNote } })
             });
           }
         } else {
@@ -411,56 +483,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // 4.5 Prepaid: explicitly post transaction(s) to attach gateway names properly
-    if (body.payment_method === 'prepaid' && completeData.draft_order?.order_id) {
-      try {
-        const createdOrderId = completeData.draft_order.order_id;
-        const fullTotal = parseFloat(completeData.draft_order.total_price || existingDraft.total_price || '0');
-        const cashfreeAmount = fullTotal - walletCreditAmount;
 
-        // Post Cashfree transaction if there was an online payment portion
-        if (cashfreeAmount > 0 && body.cashfree_order_id) {
-          const txRes = await fetch(`${formattedUrl}/admin/api/2024-04/orders/${createdOrderId}/transactions.json`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyToken },
-            body: JSON.stringify({
-              transaction: {
-                amount: cashfreeAmount.toFixed(2),
-                kind: 'sale',
-                status: 'success',
-                gateway: 'Cashfree (Online)',
-                currency: existingDraft.currency || 'INR'
-              }
-            })
-          });
-          if (!txRes.ok) {
-            console.error('CASHFREE TRANSACTION ERROR:', await txRes.text());
-          }
-        }
-        
-        // Post Store Credit transaction if wallet credit was used
-        if (walletCreditAmount > 0) {
-          const txResWallet = await fetch(`${formattedUrl}/admin/api/2024-04/orders/${createdOrderId}/transactions.json`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyToken },
-            body: JSON.stringify({
-              transaction: {
-                amount: walletCreditAmount.toFixed(2),
-                kind: 'sale',
-                status: 'success',
-                gateway: 'Store Credit',
-                currency: existingDraft.currency || 'INR'
-              }
-            })
-          });
-          if (!txResWallet.ok) {
-            console.error('STORE CREDIT TRANSACTION ERROR:', await txResWallet.text());
-          }
-        }
-      } catch (e) {
-        console.error('Failed to process prepaid transactions:', e);
-      }
-    }
 
     const backgroundTasks: any[] = [];
     // 5. Debit customer store credit AFTER successful order completion (non-blocking)

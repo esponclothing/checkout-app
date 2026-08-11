@@ -64,14 +64,21 @@ export async function POST(req: Request) {
         orderAmount = parseFloat(paymentSettings.partial_cod_value.toFixed(2));
       }
     } else if (payment_method === 'prepaid' && paymentSettings.prepaid_offer_enabled) {
-      if (paymentSettings.prepaid_offer_type === 'percent') {
-        prepaidDiscount = (totalPrice * paymentSettings.prepaid_offer_value) / 100;
+      // Check if update-draft ALREADY applied the discount to the draft order
+      const alreadyDiscounted = draftOrder.applied_discount && draftOrder.applied_discount.title && draftOrder.applied_discount.title.includes('Prepaid');
+      
+      if (alreadyDiscounted) {
+        orderAmount = totalPrice; // Already discounted in Shopify
       } else {
-        prepaidDiscount = paymentSettings.prepaid_offer_value;
+        if (paymentSettings.prepaid_offer_type === 'percent') {
+          prepaidDiscount = (totalPrice * paymentSettings.prepaid_offer_value) / 100;
+        } else {
+          prepaidDiscount = paymentSettings.prepaid_offer_value;
+        }
+        // Ensure discount doesn't exceed total
+        prepaidDiscount = Math.min(prepaidDiscount, totalPrice);
+        orderAmount = parseFloat((totalPrice - prepaidDiscount).toFixed(2));
       }
-      // Ensure discount doesn't exceed total
-      prepaidDiscount = Math.min(prepaidDiscount, totalPrice);
-      orderAmount = parseFloat((totalPrice - prepaidDiscount).toFixed(2));
     }
 
     // Deduct Wallet Credit Amount
