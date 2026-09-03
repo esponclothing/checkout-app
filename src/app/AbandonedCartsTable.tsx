@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShoppingCart, ChevronDown, ChevronUp, User, Package, Trash2, RefreshCw } from 'lucide-react';
 
 export default function AbandonedCartsTable({ abandoned: initialAbandoned, customers }: { abandoned: any[], customers: any[] }) {
@@ -8,6 +8,10 @@ export default function AbandonedCartsTable({ abandoned: initialAbandoned, custo
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAbandoned([...initialAbandoned].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+  }, [initialAbandoned]);
 
   const handleDelete = async (sessionId: string) => {
     if (confirmId !== sessionId) {

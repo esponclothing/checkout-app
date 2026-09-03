@@ -10,6 +10,7 @@ import CustomersTable from './CustomersTable';
 import SidebarNav from './SidebarNav';
 import WhatsAppDashboard from './WhatsAppDashboard';
 import WalletManager from './WalletManager';
+import AutoRefresh from './AutoRefresh';
 
 export const dynamic = 'force-dynamic';
 
@@ -122,6 +123,7 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex">
+      <AutoRefresh intervalMs={10000} />
       {/* Sidebar */}
       <aside className="w-64 border-r border-slate-800 bg-slate-900 p-6 flex flex-col gap-6 shrink-0 sticky top-0 h-screen">
         <div className="flex items-center gap-3 text-yellow-500 mb-2">
