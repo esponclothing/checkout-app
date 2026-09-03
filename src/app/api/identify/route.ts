@@ -29,8 +29,7 @@ export async function POST(req: Request) {
     const supabaseUrl = process.env.SUPABASE_URL || '';
     const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
-    , { status: 500, headers });
-    }
+    
 
     // 1. Verify merchant
     const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id,payment_settings`, {
