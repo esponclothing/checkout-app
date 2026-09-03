@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../../../lib/supabaseFetch';
 import { NextResponse } from 'next/server';
 
 export async function OPTIONS() {
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
 
     // Fetch existing addresses
     if (action === 'FETCH') {
-      const res = await fetch(`${supabaseUrl}/rest/v1/network_addresses?phone=eq.${encodeURIComponent(formattedPhone)}&order=created_at.desc`, {
+      const res = await supabaseFetch(`${supabaseUrl}/rest/v1/network_addresses?phone=eq.${encodeURIComponent(formattedPhone)}&order=created_at.desc`, {
         headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
         cache: 'no-store'
       });
@@ -38,7 +39,7 @@ export async function POST(req: Request) {
 
       let shopifyAddresses: any[] = [];
       try {
-        const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=shopify_store_url,shopify_access_token`, {
+        const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=shopify_store_url,shopify_access_token`, {
           headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
         });
         const merchants = await merchantRes.json();
@@ -82,7 +83,7 @@ export async function POST(req: Request) {
       delete cleanAddressData.email;
       delete cleanAddressData.company;
 
-      const res = await fetch(`${supabaseUrl}/rest/v1/network_addresses`, {
+      const res = await supabaseFetch(`${supabaseUrl}/rest/v1/network_addresses`, {
         method: 'POST',
         headers: {
           'apikey': supabaseKey,
@@ -113,7 +114,7 @@ export async function POST(req: Request) {
         const shopifyAddressId = id.replace('shopify_', '');
         
         // 1. Fetch merchant keys
-        const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=shopify_store_url,shopify_access_token`, {
+        const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=shopify_store_url,shopify_access_token`, {
           headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
         });
         const merchants = await merchantRes.json();
@@ -156,7 +157,7 @@ export async function POST(req: Request) {
         delete cleanUpdateData.email;
         delete cleanUpdateData.company;
 
-        const res = await fetch(`${supabaseUrl}/rest/v1/network_addresses?id=eq.${id}&phone=eq.${encodeURIComponent(phone)}`, {
+        const res = await supabaseFetch(`${supabaseUrl}/rest/v1/network_addresses?id=eq.${id}&phone=eq.${encodeURIComponent(phone)}`, {
           method: 'PATCH',
           headers: {
             'apikey': supabaseKey,
@@ -184,7 +185,7 @@ export async function POST(req: Request) {
         const shopifyAddressId = id.replace('shopify_', '');
         
         // 1. Fetch merchant keys
-        const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=shopify_store_url,shopify_access_token`, {
+        const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=shopify_store_url,shopify_access_token`, {
           headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
         });
         const merchants = await merchantRes.json();
@@ -210,7 +211,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true }, { headers });
       } else {
         // Delete local Supabase address
-        const res = await fetch(`${supabaseUrl}/rest/v1/network_addresses?id=eq.${id}&phone=eq.${encodeURIComponent(phone)}`, {
+        const res = await supabaseFetch(`${supabaseUrl}/rest/v1/network_addresses?id=eq.${id}&phone=eq.${encodeURIComponent(phone)}`, {
           method: 'DELETE',
           headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
         });

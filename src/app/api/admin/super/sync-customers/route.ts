@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../../../../../lib/supabaseFetch';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
@@ -19,7 +20,7 @@ export async function POST(req: Request) {
     const sbHeaders = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
 
     // Get merchant info
-    const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?id=eq.${merchant_id}`, {
+    const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?id=eq.${merchant_id}`, {
       headers: sbHeaders, cache: 'no-store'
     });
     const merchants = await merchantRes.json();
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
         if (phone.length === 10) phone = '+91' + phone;
         else if (phone.length > 10 && !phone.startsWith('+')) phone = '+' + phone;
 
-        await fetch(`${supabaseUrl}/rest/v1/network_users`, {
+        await supabaseFetch(`${supabaseUrl}/rest/v1/network_users`, {
           method: 'POST',
           headers: { ...sbHeaders, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
           body: JSON.stringify({

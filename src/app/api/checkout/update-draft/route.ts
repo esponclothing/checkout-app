@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../../../../lib/supabaseFetch';
 import { NextResponse } from 'next/server';
 
 export async function OPTIONS() {
@@ -24,7 +25,7 @@ export async function POST(req: Request) {
     const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
     // Fetch Merchant & Payment Settings
-    const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}`, {
+    const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
     const merchants = await merchantRes.json();

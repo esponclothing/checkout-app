@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../../../../lib/supabaseFetch';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
@@ -24,7 +25,7 @@ export async function DELETE(req: Request) {
     const sbHeaders = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' };
 
     // Get merchant's Shopify credentials
-    const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?id=eq.${merchantId}`, {
+    const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?id=eq.${merchantId}`, {
       headers: sbHeaders
     });
     const merchants = await merchantRes.json();
@@ -61,7 +62,7 @@ export async function DELETE(req: Request) {
     if (deleteFrom === 'supabase' || deleteFrom === 'both') {
       try {
         // Try to delete from network_users by shopify_customer_id field if it exists
-        await fetch(`${supabaseUrl}/rest/v1/network_users?shopify_customer_id=eq.${customerId}`, {
+        await supabaseFetch(`${supabaseUrl}/rest/v1/network_users?shopify_customer_id=eq.${customerId}`, {
           method: 'DELETE',
           headers: sbHeaders
         });

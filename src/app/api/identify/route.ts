@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../../../lib/supabaseFetch';
 import { NextResponse } from 'next/server';
 
 export async function OPTIONS() {
@@ -33,7 +34,7 @@ export async function POST(req: Request) {
     }
 
     // 1. Verify merchant
-    const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id,payment_settings`, {
+    const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id,payment_settings`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
     const merchants = await merchantRes.json();
@@ -46,7 +47,7 @@ export async function POST(req: Request) {
     // 2. Try to identify by Device ID
     let phone = null;
     if (device_id) {
-      const deviceRes = await fetch(`${supabaseUrl}/rest/v1/network_devices?device_id=eq.${device_id}&select=phone`, {
+      const deviceRes = await supabaseFetch(`${supabaseUrl}/rest/v1/network_devices?device_id=eq.${device_id}&select=phone`, {
         headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
       });
       const devices = await deviceRes.json();
@@ -74,7 +75,7 @@ export async function POST(req: Request) {
     let email = null;
     let storeCreditBalance = 0;
 
-    const userRes = await fetch(`${supabaseUrl}/rest/v1/network_users?phone=eq.${encodeURIComponent(phone)}&select=email`, {
+    const userRes = await supabaseFetch(`${supabaseUrl}/rest/v1/network_users?phone=eq.${encodeURIComponent(phone)}&select=email`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
     const users = await userRes.json();

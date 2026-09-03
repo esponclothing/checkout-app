@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../../../../../lib/supabaseFetch';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
@@ -27,8 +28,7 @@ export async function POST(req: Request) {
     const encodedOr = encodeURIComponent(orQuery);
 
     try {
-      const res = await fetch(
-        `${supabaseUrl}/rest/v1/saas_merchants?id=eq.${merchant_id}&or=(${encodedOr})&select=id`,
+      const res = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?id=eq.${merchant_id}&or=(${encodedOr})&select=id`,
         { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
       );
       const data = await res.json();

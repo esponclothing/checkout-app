@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../../../../lib/supabaseFetch';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
@@ -16,7 +17,7 @@ export async function POST(req: Request) {
     const supabaseUrl = process.env.SUPABASE_URL || '';
     const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
-    const res = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?id=eq.${merchantId}`, {
+    const res = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?id=eq.${merchantId}`, {
       method: 'PATCH',
       headers: {
         'apikey': supabaseKey,

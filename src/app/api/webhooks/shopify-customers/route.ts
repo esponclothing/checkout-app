@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../../../../lib/supabaseFetch';
 import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
@@ -28,7 +29,7 @@ export async function POST(req: Request) {
       else if (phone.length > 10 && !phone.startsWith('+')) phone = '+' + phone;
 
       // Upsert into network_users
-      await fetch(`${SUPABASE_URL}/rest/v1/network_users`, {
+      await supabaseFetch(`${SUPABASE_URL}/rest/v1/network_users`, {
         method: 'POST',
         headers: {
           'apikey': SUPABASE_KEY,
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
       // Upsert addresses
       if (customer.addresses && customer.addresses.length > 0) {
         for (const addr of customer.addresses) {
-          await fetch(`${SUPABASE_URL}/rest/v1/network_addresses`, {
+          await supabaseFetch(`${SUPABASE_URL}/rest/v1/network_addresses`, {
             method: 'POST',
             headers: {
               'apikey': SUPABASE_KEY,

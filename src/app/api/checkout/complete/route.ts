@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../../../../lib/supabaseFetch';
 import { NextResponse } from 'next/server';
 
 export async function OPTIONS() {
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
     let actualPhone = body.phone;
     if (actualPhone === 'MASKED' && body.device_id) {
       try {
-        const dRes = await fetch(`${supabaseUrl}/rest/v1/network_devices?device_id=eq.${body.device_id}&select=phone`, {
+        const dRes = await supabaseFetch(`${supabaseUrl}/rest/v1/network_devices?device_id=eq.${body.device_id}&select=phone`, {
           headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
         });
         const dData = await dRes.json();
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
     }
 
     // Fetch merchant Shopify keys
-    const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}`, {
+    const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
       next: { revalidate: 300 }
     });
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
     const shopifyToken = merchant.shopify_access_token || process.env.VITE_SHOPIFY_ACCESS_TOKEN;
 
     // --- IDEMPOTENCY LOCK: Prevent Double-Spends ---
-    const checkRes = await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?draft_order_id=eq.${draft_order_id}&select=id,status`, {
+    const checkRes = await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?draft_order_id=eq.${draft_order_id}&select=id,status`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
     const existingSessions = await checkRes.json();
@@ -71,7 +72,7 @@ export async function POST(req: Request) {
       }
       
       // Attempt to acquire lock atomically
-      const lockRes = await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?id=eq.${session.id}&status=eq.${session.status}`, {
+      const lockRes = await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?id=eq.${session.id}&status=eq.${session.status}`, {
         method: 'PATCH',
         headers: { 
           'apikey': supabaseKey, 
@@ -88,7 +89,7 @@ export async function POST(req: Request) {
       }
     } else {
       // Insert new session with processing status
-      const insertRes = await fetch(`${supabaseUrl}/rest/v1/checkout_sessions`, {
+      const insertRes = await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions`, {
         method: 'POST',
         headers: { 
           'apikey': supabaseKey, 
@@ -288,6 +289,19 @@ export async function POST(req: Request) {
       const existingNote = draftPayload.note || existingDraft.note || '';
       const walletNote = `Paid via Store Credit: ₹${walletCreditAmount.toFixed(2)}`;
       draftPayload.note = existingNote ? `${existingNote} | ${walletNote}` : walletNote;
+
+      const currentDiscountStr = existingDraft.applied_discount ? existingDraft.applied_discount.amount : '0.00';
+      const currentDiscount = parseFloat(currentDiscountStr);
+      const newDiscountValue = currentDiscount + walletCreditAmount;
+      
+      let newDiscountTitle = (existingDraft.applied_discount && existingDraft.applied_discount.title) ? existingDraft.applied_discount.title : '';
+      newDiscountTitle = newDiscountTitle ? `${newDiscountTitle} + Store Credit` : 'Store Credit';
+
+      draftPayload.applied_discount = {
+        title: newDiscountTitle,
+        value: newDiscountValue.toFixed(2),
+        value_type: 'fixed_amount'
+      };
     }
 
     // Add Cashfree Note
@@ -370,54 +384,79 @@ export async function POST(req: Request) {
 
     let completeData = await completeRes.json();
 
-    if (!completeRes.ok) {
+    if (!completeRes.ok || (completeData.draft_order && !completeData.draft_order.order_id) || !completeData.draft_order) {
       const errStr = JSON.stringify(completeData);
-      if (errStr.includes('already completed') || errStr.includes('Draft order has been completed') || errStr.includes('This order has been paid')) {
-        console.log('Order already completed by webhook. Fetching actual order ID to continue side effects.');
-        // Fetch draft order to get the actual order_id
-        const getDraft = await fetch(`${formattedUrl}/admin/api/2024-04/draft_orders/${draft_order_id}.json`, {
-          headers: { 'X-Shopify-Access-Token': shopifyToken }
-        });
-        const draftData = await getDraft.json();
-        if (draftData.draft_order && draftData.draft_order.order_id) {
-          completeData = draftData; // Mock it so the rest of the code works!
-          
-          // Since the draft order PUT (at line 225) might have failed due to it being already completed,
-          // we need to explicitly apply the wallet tags and notes, and the Cashfree Note, to the actual order now!
-          let finalTags = draftData.draft_order.tags || '';
-          let finalNote = draftData.draft_order.note || '';
-          let shouldUpdateOrder = false;
-
-          if (walletCreditAmount > 0) {
-            const walletTag = `Store_Credit_Paid_${walletCreditAmount.toFixed(2)}`;
-            finalTags = finalTags ? `${finalTags}, ${walletTag}` : walletTag;
-            
-            const walletNote = `Paid via Store Credit: ₹${walletCreditAmount.toFixed(2)}`;
-            finalNote = finalNote ? `${finalNote} | ${walletNote}` : walletNote;
-            shouldUpdateOrder = true;
-          }
-
-          if (body.cashfree_order_id && body.payment_method === 'prepaid') {
-            const cfNote = `Paid via Cashfree (Online) - Transaction ID: ${body.cashfree_order_id}`;
-            finalNote = finalNote ? `${finalNote} | ${cfNote}` : cfNote;
-            shouldUpdateOrder = true;
-          }
-
-          if (shouldUpdateOrder) {
-            await fetch(`${formattedUrl}/admin/api/2024-04/orders/${draftData.draft_order.order_id}.json`, {
-              method: 'PUT',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-Shopify-Access-Token': shopifyToken
-              },
-              body: JSON.stringify({ order: { id: draftData.draft_order.order_id, tags: finalTags, note: finalNote } })
-            });
-          }
-        } else {
-          throw new Error(errStr);
+      console.log('Order completion missing order_id or race condition. Fetching draft order. Error/Data:', errStr);
+      
+      let gotOrderId = false;
+      let retryCount = 0;
+      
+      while (retryCount < 3 && !gotOrderId) {
+        if (retryCount > 0) {
+          await new Promise(res => setTimeout(res, 1000));
         }
-      } else {
+        try {
+          const getDraft = await fetch(`${formattedUrl}/admin/api/2024-04/draft_orders/${draft_order_id}.json`, {
+            headers: { 'X-Shopify-Access-Token': shopifyToken }
+          });
+          const draftData = await getDraft.json();
+          
+          if (draftData.draft_order && draftData.draft_order.order_id) {
+            completeData = draftData; // Mock it!
+            gotOrderId = true;
+          }
+        } catch(e) {
+          console.error('Error fetching draft order during retry:', e);
+        }
+        retryCount++;
+      }
+      
+      if (!gotOrderId && !completeRes.ok) {
         throw new Error(errStr);
+      } else if (!gotOrderId && completeData.draft_order) {
+        // If it's still missing, fallback to draft order ID so it doesn't crash completely
+        completeData.draft_order.order_id = completeData.draft_order.id;
+      }
+    }
+
+    // Always ensure the Cashfree Note and Wallet Note are on the final order!
+    if (completeData.draft_order && completeData.draft_order.order_id) {
+      let finalTags = completeData.draft_order.tags || '';
+      let finalNote = completeData.draft_order.note || '';
+      let shouldUpdateOrder = false;
+
+      if (walletCreditAmount > 0) {
+        const walletTag = `Store_Credit_Paid_${walletCreditAmount.toFixed(2)}`;
+        if (!finalTags.includes(walletTag)) {
+          finalTags = finalTags ? `${finalTags}, ${walletTag}` : walletTag;
+          shouldUpdateOrder = true;
+        }
+        
+        const walletNote = `Paid via Store Credit: ₹${walletCreditAmount.toFixed(2)}`;
+        if (!finalNote.includes(walletNote)) {
+          finalNote = finalNote ? `${finalNote} | ${walletNote}` : walletNote;
+          shouldUpdateOrder = true;
+        }
+      }
+
+      if (body.cashfree_order_id && body.payment_method === 'prepaid') {
+        const cashfreeAmount = Math.max(0, parseFloat(completeData.draft_order.total_price) - walletCreditAmount).toFixed(2);
+        const cfNote = `Paid via Cashfree (Online): ₹${cashfreeAmount} - Transaction ID: ${body.cashfree_order_id}`;
+        if (!finalNote.includes(body.cashfree_order_id)) {
+          finalNote = finalNote ? `${finalNote} | ${cfNote}` : cfNote;
+          shouldUpdateOrder = true;
+        }
+      }
+
+      if (shouldUpdateOrder) {
+        await fetch(`${formattedUrl}/admin/api/2024-04/orders/${completeData.draft_order.order_id}.json`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Shopify-Access-Token': shopifyToken
+          },
+          body: JSON.stringify({ order: { id: completeData.draft_order.order_id, tags: finalTags, note: finalNote } })
+        });
       }
     }
 
@@ -535,7 +574,7 @@ export async function POST(req: Request) {
         try {
           // Calculate cashback amount
           const paidAmount = parseFloat(completeData.draft_order.total_price || existingDraft.total_price || '0');
-          const orderTotal = paidAmount;
+          const orderTotal = paidAmount + (typeof walletCreditAmount !== 'undefined' ? walletCreditAmount : 0);
           
           let cashbackAmt = 0;
           if (merchant.payment_settings.cashback_type === 'percent') {
@@ -665,7 +704,7 @@ export async function POST(req: Request) {
 
     // 6. Update checkout_sessions status to completed
     if (supabaseUrl && supabaseKey) {
-      await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?draft_order_id=eq.${draft_order_id}`, {
+      await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?draft_order_id=eq.${draft_order_id}`, {
         method: 'PATCH',
         headers: { 
           'apikey': supabaseKey, 

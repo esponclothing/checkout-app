@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../../../../lib/supabaseFetch';
 import { NextResponse } from 'next/server';
 
 export async function OPTIONS() {
@@ -29,7 +30,7 @@ export async function POST(req: Request) {
     const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
     // 1. Authenticate Merchant
-    const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id`, {
+    const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
     const merchants = await merchantRes.json();
@@ -40,7 +41,7 @@ export async function POST(req: Request) {
 
     // 2. Find Phone from Device ID (if they logged in previously)
     let phone = null;
-    const deviceRes = await fetch(`${supabaseUrl}/rest/v1/network_devices?device_id=eq.${device_id}&select=phone`, {
+    const deviceRes = await supabaseFetch(`${supabaseUrl}/rest/v1/network_devices?device_id=eq.${device_id}&select=phone`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
     const devices = await deviceRes.json();
@@ -50,14 +51,14 @@ export async function POST(req: Request) {
 
     // 3. Upsert into checkout_sessions
     // First, check if there is an existing 'abandoned' session for this device
-    const checkRes = await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?device_id=eq.${device_id}&status=eq.abandoned&order=updated_at.desc&limit=1`, {
+    const checkRes = await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?device_id=eq.${device_id}&status=eq.abandoned&order=updated_at.desc&limit=1`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
     const existing = await checkRes.json();
 
     if (existing && existing.length > 0) {
       // Update existing session
-      await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?id=eq.${existing[0].id}`, {
+      await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?id=eq.${existing[0].id}`, {
         method: 'PATCH',
         headers: { 
           'apikey': supabaseKey, 
@@ -72,7 +73,7 @@ export async function POST(req: Request) {
       });
     } else {
       // Insert new session
-      await fetch(`${supabaseUrl}/rest/v1/checkout_sessions`, {
+      await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions`, {
         method: 'POST',
         headers: { 
           'apikey': supabaseKey, 

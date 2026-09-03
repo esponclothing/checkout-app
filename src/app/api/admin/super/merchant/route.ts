@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../../../../../lib/supabaseFetch';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
@@ -35,7 +36,7 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
     }
 
-    const res = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?id=eq.${id}`, {
+    const res = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?id=eq.${id}`, {
       method: 'PATCH',
       headers: {
         'apikey': supabaseKey,

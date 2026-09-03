@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../../../../lib/supabaseFetch';
 import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
 
     let cleanStore = (shopDomain as string).trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
     
-    const merchantRes = await fetch(`${SUPABASE_URL}/rest/v1/saas_merchants?shopify_store_url=eq.${cleanStore}&select=shopify_access_token,payment_settings,name`, {
+    const merchantRes = await supabaseFetch(`${SUPABASE_URL}/rest/v1/saas_merchants?shopify_store_url=eq.${cleanStore}&select=shopify_access_token,payment_settings,name`, {
       headers: {
         'apikey': SUPABASE_KEY,
         'Authorization': `Bearer ${SUPABASE_KEY}`

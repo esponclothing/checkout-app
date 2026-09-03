@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../../../lib/supabaseFetch';
 import { NextResponse } from 'next/server';
 
 export async function OPTIONS() {
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
 
     let targetPhone = phone;
     if ((!targetPhone || targetPhone === 'MASKED') && device_id) {
-      const deviceRes = await fetch(`${supabaseUrl}/rest/v1/network_devices?device_id=eq.${device_id}&select=phone`, {
+      const deviceRes = await supabaseFetch(`${supabaseUrl}/rest/v1/network_devices?device_id=eq.${device_id}&select=phone`, {
         headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
       });
       const devices = await deviceRes.json();
@@ -39,8 +40,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ storeCreditBalance: 0 }, { headers });
     }
 
-    const merchantRes = await fetch(
-      `${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=shopify_access_token,shopify_store_url,payment_settings`,
+    const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=shopify_access_token,shopify_store_url,payment_settings`,
       { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
     );
     const merchants = await merchantRes.json();
@@ -63,7 +63,10 @@ export async function POST(req: Request) {
 
       const searchRes = await fetch(
         `https://${cleanStore}/admin/api/2024-04/customers/search.json?query=phone:${encodeURIComponent(formattedPhone)}&limit=1&fields=id`,
-        { headers: { 'X-Shopify-Access-Token': merchant.shopify_access_token } }
+        { 
+          headers: { 'X-Shopify-Access-Token': merchant.shopify_access_token },
+          cache: 'no-store'
+        }
       );
       if (searchRes.ok) {
         const searchData = await searchRes.json();
@@ -79,7 +82,8 @@ export async function POST(req: Request) {
           const balRes = await fetch(graphqlUrl, {
             method: 'POST',
             headers: gqlHeaders,
-            body: JSON.stringify({ query: balQ })
+            body: JSON.stringify({ query: balQ }),
+            cache: 'no-store'
           });
           const balData = await balRes.json();
           storeCreditBalance = parseFloat(

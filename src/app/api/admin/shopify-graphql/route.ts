@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../../../../lib/supabaseFetch';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
@@ -17,7 +18,7 @@ export async function POST(req: Request) {
     const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
     // Fetch merchant details
-    const res = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?id=eq.${merchantId}&select=shopify_access_token,shopify_store_url`, {
+    const res = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?id=eq.${merchantId}&select=shopify_access_token,shopify_store_url`, {
       headers: {
         'apikey': supabaseKey,
         'Authorization': `Bearer ${supabaseKey}`

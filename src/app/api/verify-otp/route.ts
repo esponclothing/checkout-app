@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../../../lib/supabaseFetch';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 
@@ -36,8 +37,7 @@ export async function POST(req: Request) {
     }
 
     // 1. Verify merchant (fetch Shopify credentials too for wallet lookup)
-    const merchantRes = await fetch(
-      `${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id,shopify_access_token,shopify_store_url,payment_settings`,
+    const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id,shopify_access_token,shopify_store_url,payment_settings`,
       { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
     );
     const merchants = await merchantRes.json();
@@ -64,7 +64,7 @@ export async function POST(req: Request) {
       if (phone === '+919306817689' && otp === '1234') {
         // Allow
       } else {
-        await fetch(`${supabaseUrl}/rest/v1/otp_logs?phone=eq.${encodeURIComponent(phone)}&merchant_id=eq.${merchantId}&status=eq.sent`, {
+        await supabaseFetch(`${supabaseUrl}/rest/v1/otp_logs?phone=eq.${encodeURIComponent(phone)}&merchant_id=eq.${merchantId}&status=eq.sent`, {
           method: 'PATCH',
           headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'failed' })
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
     }
 
     // Mark OTP as verified
-    await fetch(`${supabaseUrl}/rest/v1/otp_logs?phone=eq.${encodeURIComponent(phone)}&merchant_id=eq.${merchantId}&status=eq.sent`, {
+    await supabaseFetch(`${supabaseUrl}/rest/v1/otp_logs?phone=eq.${encodeURIComponent(phone)}&merchant_id=eq.${merchantId}&status=eq.sent`, {
       method: 'PATCH',
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'verified' })
@@ -91,7 +91,7 @@ export async function POST(req: Request) {
     if (first_name) userUpsertData.first_name = first_name;
     if (last_name) userUpsertData.last_name = last_name;
 
-    await fetch(`${supabaseUrl}/rest/v1/network_users`, {
+    await supabaseFetch(`${supabaseUrl}/rest/v1/network_users`, {
       method: 'POST',
       headers: {
         'apikey': supabaseKey,
@@ -104,7 +104,7 @@ export async function POST(req: Request) {
 
     if (device_id || cleanIp !== 'unknown') {
       const did = device_id || crypto.randomUUID();
-      await fetch(`${supabaseUrl}/rest/v1/network_devices`, {
+      await supabaseFetch(`${supabaseUrl}/rest/v1/network_devices`, {
         method: 'POST',
         headers: {
           'apikey': supabaseKey,
@@ -120,7 +120,7 @@ export async function POST(req: Request) {
         })
       });
 
-      await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?device_id=eq.${did}`, {
+      await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?device_id=eq.${did}`, {
         method: 'PATCH',
         headers: {
           'apikey': supabaseKey,
@@ -132,7 +132,7 @@ export async function POST(req: Request) {
     }
 
     // 4. Fetch saved profile (address, etc)
-    const userRes = await fetch(`${supabaseUrl}/rest/v1/network_users?phone=eq.${encodeURIComponent(formattedPhone)}&select=*`, {
+    const userRes = await supabaseFetch(`${supabaseUrl}/rest/v1/network_users?phone=eq.${encodeURIComponent(formattedPhone)}&select=*`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
     const users = await userRes.json();

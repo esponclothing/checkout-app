@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../lib/supabaseFetch';
 'use server'
 
 import { revalidatePath } from 'next/cache'
@@ -31,7 +32,7 @@ export async function addMerchant(formData: FormData) {
   const supabaseUrl = process.env.SUPABASE_URL || '';
   const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
-  const res = await fetch(`${supabaseUrl}/rest/v1/saas_merchants`, {
+  const res = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants`, {
     method: 'POST',
     headers: {
       'apikey': supabaseKey,

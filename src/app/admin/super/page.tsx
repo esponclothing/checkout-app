@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../../../lib/supabaseFetch';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { LayoutDashboard, Users, LogOut } from 'lucide-react';
@@ -10,7 +11,7 @@ async function getMerchants() {
   const supabaseUrl = process.env.SUPABASE_URL || '';
   const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
   if (!supabaseUrl) return [];
-  const res = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?order=created_at.desc`, {
+  const res = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?order=created_at.desc`, {
     headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
     cache: 'no-store'
   });

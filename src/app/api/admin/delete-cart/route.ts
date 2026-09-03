@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../../../../lib/supabaseFetch';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
@@ -25,7 +26,7 @@ export async function DELETE(req: Request) {
     };
 
     // Delete from checkout_sessions table
-    const res = await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?id=eq.${sessionId}`, {
+    const res = await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?id=eq.${sessionId}`, {
       method: 'DELETE',
       headers: sbHeaders
     });

@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../lib/supabaseFetch';
 import { ShieldCheck } from 'lucide-react';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -21,17 +22,17 @@ async function getDashboardData(merchantId: string) {
   const headers = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
 
   // 1. Get Merchant Info
-  const mRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?id=eq.${merchantId}`, { headers, cache: 'no-store' });
+  const mRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?id=eq.${merchantId}`, { headers, cache: 'no-store' });
   const merchants = mRes.ok ? await mRes.json() : [];
   if (!merchants.length) return null;
   const merchant = merchants[0];
 
   // 2. Get OTP Logs
-  const otpRes = await fetch(`${supabaseUrl}/rest/v1/otp_logs?merchant_id=eq.${merchantId}&order=created_at.desc`, { headers, cache: 'no-store' });
+  const otpRes = await supabaseFetch(`${supabaseUrl}/rest/v1/otp_logs?merchant_id=eq.${merchantId}&order=created_at.desc`, { headers, cache: 'no-store' });
   const otpLogs = otpRes.ok ? await otpRes.json() : [];
 
   // 3. Get Checkout Sessions (Abandoned vs Completed)
-  const sessionRes = await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?merchant_id=eq.${merchantId}&order=updated_at.desc`, { headers, cache: 'no-store' });
+  const sessionRes = await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?merchant_id=eq.${merchantId}&order=updated_at.desc`, { headers, cache: 'no-store' });
   const sessions = sessionRes.ok ? await sessionRes.json() : [];
   
   const abandoned = sessions.filter((s: any) => s.status === 'abandoned');
@@ -103,8 +104,7 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
     const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
     const ownerPhone = data.merchant.owner_phone;
     if (ownerPhone) {
-      const res = await fetch(
-        `${supabaseUrl}/rest/v1/saas_merchants?or=(owner_phone.eq.${encodeURIComponent(ownerPhone)},admin_phones.cs.{"${ownerPhone}"})&select=id,name,shopify_store_url`,
+      const res = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?or=(owner_phone.eq.${encodeURIComponent(ownerPhone)},admin_phones.cs.{"${ownerPhone}"})&select=id,name,shopify_store_url`,
         { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }, cache: 'no-store' }
       );
       if (res.ok) {

@@ -1,3 +1,4 @@
+import { supabaseFetch } from '../../../../lib/supabaseFetch';
 import { NextResponse } from 'next/server';
 
 export async function OPTIONS() {
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
     const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
     // Fetch merchant Shopify keys
-    const merchantRes = await fetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}`, {
+    const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
     const merchants = await merchantRes.json();
@@ -131,16 +132,30 @@ export async function POST(req: Request) {
 
     // 3. Log checkout session for Abandoned Checkout tracking
     const deviceId = body.device_id || null;
-    const phone = body.phone || null;
+    let phone = body.phone || null;
 
     if (supabaseUrl && supabaseKey) {
-      const checkRes = await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?device_id=eq.${deviceId}&status=eq.abandoned&order=updated_at.desc&limit=1`, {
+      if (phone === 'MASKED' && deviceId) {
+        try {
+          const dRes = await supabaseFetch(`${supabaseUrl}/rest/v1/network_devices?device_id=eq.${deviceId}&select=phone`, {
+            headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+          });
+          const dData = await dRes.json();
+          if (dData && dData.length > 0) {
+            phone = dData[0].phone;
+          }
+        } catch (e) {}
+      }
+    }
+
+    if (supabaseUrl && supabaseKey) {
+      const checkRes = await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?device_id=eq.${deviceId}&status=eq.abandoned&order=updated_at.desc&limit=1`, {
         headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
       });
       const existing = await checkRes.json();
 
       if (existing && existing.length > 0) {
-        await fetch(`${supabaseUrl}/rest/v1/checkout_sessions?id=eq.${existing[0].id}`, {
+        await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?id=eq.${existing[0].id}`, {
           method: 'PATCH',
           headers: { 
             'apikey': supabaseKey, 
@@ -156,7 +171,7 @@ export async function POST(req: Request) {
           })
         });
       } else {
-        await fetch(`${supabaseUrl}/rest/v1/checkout_sessions`, {
+        await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions`, {
           method: 'POST',
           headers: { 
             'apikey': supabaseKey, 
