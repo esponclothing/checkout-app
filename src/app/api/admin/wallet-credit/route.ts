@@ -59,35 +59,10 @@ export async function POST(req: Request) {
     const fetchData = await fetchRes.json();
     let storeCreditAccountId = fetchData.data?.customer?.storeCreditAccounts?.edges?.[0]?.node?.id;
 
-    // Step 2: If no store credit account, create one via REST API
+    // Step 2: If no store credit account, use the Customer GID directly.
+    // Shopify automatically creates a store credit account when crediting a customer GID.
     if (!storeCreditAccountId) {
-      const createRes = await fetch(`https://${cleanStore}/admin/api/2024-04/customers/${customerIdClean}/store_credit_accounts.json`, {
-        method: 'POST',
-        headers: shopifyHeaders,
-        body: JSON.stringify({ store_credit_account: {} })
-      });
-
-      if (createRes.ok) {
-        const createData = await createRes.json();
-        if (createData.store_credit_account?.id) {
-          storeCreditAccountId = `gid://shopify/StoreCreditAccount/${createData.store_credit_account.id}`;
-        }
-      } else {
-        // Alternative: try fetching via REST
-        const listRes = await fetch(`https://${cleanStore}/admin/api/2024-04/customers/${customerIdClean}/store_credit_accounts.json`, {
-          headers: shopifyHeaders
-        });
-        if (listRes.ok) {
-          const listData = await listRes.json();
-          if (listData.store_credit_accounts?.[0]?.id) {
-            storeCreditAccountId = `gid://shopify/StoreCreditAccount/${listData.store_credit_accounts[0].id}`;
-          }
-        }
-      }
-    }
-
-    if (!storeCreditAccountId) {
-      return NextResponse.json({ error: 'Could not find or create store credit account for this customer' }, { status: 400 });
+      storeCreditAccountId = customerGid;
     }
 
     // Step 3: Credit the store credit account using GraphQL
