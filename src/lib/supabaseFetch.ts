@@ -6,7 +6,7 @@ export const pool = new Pool({
 
 export async function supabaseFetch(url: string, options: any = {}) {
   try {
-    const urlObj = new URL(url);
+    const urlObj = new URL(url, 'http://dummy.internal');
     const pathParts = urlObj.pathname.split('/');
     const tableName = pathParts[pathParts.length - 1];
     const method = (options.method || 'GET').toUpperCase();
