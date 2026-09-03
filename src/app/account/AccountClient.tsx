@@ -193,7 +193,7 @@ export default function AccountClient({ initialMerchantKey, initialStoreUrl, ini
       try {
         const cleanDigits = phone.replace(/\D/g, '');
         const last10 = cleanDigits.slice(-10);
-        const retRes = await fetch(`https://shopify-price-editor.vercel.app/api/returns?phone=${encodeURIComponent('+91' + last10)}`);
+        const retRes = await fetch(`https://shopify-price-editor-production.up.railway.app/api/shopify-customer-orders?phone=${encodeURIComponent('+91' + last10)}`);
         const retData = await retRes.json();
         if (retData.success) setMyReturns(retData.requests || []);
       } catch (_) {}
@@ -405,7 +405,7 @@ export default function AccountClient({ initialMerchantKey, initialStoreUrl, ini
           merchant_key: merchantKey,
           store: initialStoreUrl
         };
-        const res = await fetch('https://shopify-price-editor.vercel.app/api/returns', {
+        const res = await fetch('https://shopify-price-editor-production.up.railway.app/api/shopify-customer-orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
