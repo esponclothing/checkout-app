@@ -126,7 +126,7 @@ export async function supabaseFetch(url: string, options: any = {}) {
     return {
       ok: true,
       status: 200,
-      json: async () => res.rows,
+      json: async (): Promise<any> => res.rows,
       text: async () => JSON.stringify(res.rows)
     };
 
@@ -135,7 +135,7 @@ export async function supabaseFetch(url: string, options: any = {}) {
     return {
       ok: false,
       status: 500,
-      json: async () => ({ error: error }),
+      json: async (): Promise<any> => ({ error: error, message: error instanceof Error ? error.message : 'Unknown error' }),
       text: async () => 'Internal Server Error'
     };
   }
