@@ -16,8 +16,6 @@ export const dynamic = 'force-dynamic';
 async function getDashboardData(merchantId: string) {
   const supabaseUrl = process.env.SUPABASE_URL || '';
   const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
-  
-  if (!supabaseUrl) return null;
 
   const headers = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
 

@@ -10,7 +10,6 @@ export const dynamic = 'force-dynamic';
 async function getMerchants() {
   const supabaseUrl = process.env.SUPABASE_URL || '';
   const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
-  if (!supabaseUrl) return [];
   const res = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?order=created_at.desc`, {
     headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
     cache: 'no-store'
