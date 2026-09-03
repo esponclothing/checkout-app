@@ -134,7 +134,7 @@ export async function POST(req: Request) {
     const deviceId = body.device_id || null;
     let phone = body.phone || null;
 
-    if (supabaseUrl && supabaseKey) {
+    if (true) {
       if (phone === 'MASKED' && deviceId) {
         try {
           const dRes = await supabaseFetch(`${supabaseUrl}/rest/v1/network_devices?device_id=eq.${deviceId}&select=phone`, {
@@ -148,7 +148,7 @@ export async function POST(req: Request) {
       }
     }
 
-    if (supabaseUrl && supabaseKey) {
+    if (true) {
       const checkRes = await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?device_id=eq.${deviceId}&status=eq.abandoned&order=updated_at.desc&limit=1`, {
         headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
       });

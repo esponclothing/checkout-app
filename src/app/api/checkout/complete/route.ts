@@ -703,7 +703,7 @@ export async function POST(req: Request) {
     }
 
     // 6. Update checkout_sessions status to completed
-    if (supabaseUrl && supabaseKey) {
+    if (true) {
       await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?draft_order_id=eq.${draft_order_id}`, {
         method: 'PATCH',
         headers: { 

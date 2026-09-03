@@ -46,7 +46,7 @@ export async function POST(req: Request) {
     let waOtpTemplate = 'eleven_fit_otp';
 
     // 1. Verify merchant and fetch device phone if needed
-    if (supabaseUrl && supabaseKey) {
+    if (true) {
       const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id,payment_settings`, {
         headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
       });

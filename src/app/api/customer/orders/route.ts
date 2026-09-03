@@ -29,8 +29,7 @@ export async function POST(req: Request) {
     const supabaseUrl = process.env.SUPABASE_URL || '';
     const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
-    if (!supabaseUrl || !supabaseKey) {
-      return NextResponse.json({ error: 'Database not configured' }, { status: 500, headers });
+    , { status: 500, headers });
     }
 
     // 1. Fetch merchant credentials
