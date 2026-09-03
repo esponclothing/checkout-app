@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { pool } from '../../../lib/supabaseFetch';
+import { pool } from '../../../../lib/supabaseFetch';
 
 export async function POST(req: Request) {
   try {

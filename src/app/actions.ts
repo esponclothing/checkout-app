@@ -1,5 +1,5 @@
-import { supabaseFetch } from '../lib/supabaseFetch';
 'use server'
+import { supabaseFetch } from '../lib/supabaseFetch';
 
 import { revalidatePath } from 'next/cache'
 
