@@ -1,109 +1,99 @@
 import { NextResponse } from 'next/server';
-import { pool } from '../../../../lib/supabaseFetch';
+import { pool } from '../../../../lib/dbFetch';
+import { completeShopifyOrder } from '../../../../lib/orderCompletion';
 
 export async function POST(req: Request) {
   try {
     const rawBody = await req.text();
-    const body = JSON.parse(rawBody);
+    let body: any;
+    try {
+      body = JSON.parse(rawBody);
+    } catch (e) {
+      return NextResponse.json({ message: 'Invalid JSON body' }, { status: 400 });
+    }
 
     if (body.type !== 'PAYMENT_SUCCESS_WEBHOOK') {
+      console.log(`[Cashfree Webhook] Ignoring non-success event: ${body.type}`);
       return NextResponse.json({ message: 'Ignored, not a success event' });
     }
 
     const orderId = body.data?.order?.order_id;
     if (!orderId || !orderId.startsWith('draft_')) {
+      console.warn(`[Cashfree Webhook] Invalid or unrecognized order_id: ${orderId}`);
       return NextResponse.json({ message: 'Invalid or missing order_id' });
     }
 
-    const draftOrderId = orderId.split('_')[1];
+    const parts = orderId.split('_');
+    const draftOrderId = parts[1];
     if (!draftOrderId) {
       return NextResponse.json({ message: 'Could not extract draft_order_id' });
     }
 
-    console.log('[Cashfree Webhook] Processing successful payment for draft:', draftOrderId);
+    console.log(`[Cashfree Webhook] Processing PAYMENT_SUCCESS_WEBHOOK for draft: ${draftOrderId} (Cashfree: ${orderId})`);
 
-    // 1. Find the checkout session
-    const sessionRes = await pool.query('SELECT * FROM checkout_sessions WHERE draft_order_id = $1', [draftOrderId]);
+    // 1. Find checkout session
+    const sessionRes = await pool.query(
+      'SELECT * FROM checkout_sessions WHERE draft_order_id = $1 LIMIT 1',
+      [draftOrderId]
+    );
     const sessionData = sessionRes.rows[0];
 
+    let merchantId = sessionData?.merchant_id;
+    let cartDetails = sessionData?.cart_details || {};
+    let phone = sessionData?.phone;
+    let deviceId = sessionData?.device_id;
+
+    // Fallback: If sessionData is missing, search active merchants for the draft order
     if (!sessionData) {
-      console.error('[Cashfree Webhook] Checkout session not found');
-      return NextResponse.json({ message: 'Session not found' }, { status: 404 });
-    }
-
-    if (sessionData.status === 'completed' || sessionData.status === 'processing') {
-      console.log(`[Cashfree Webhook] Session ${sessionData.id} already processing/completed, ignoring.`);
-      return NextResponse.json({ message: 'Already processing or completed' });
-    }
-
-    // Atomic Lock: Try to set status to 'processing'
-    const lockRes = await pool.query(`
-      UPDATE checkout_sessions 
-      SET status = 'processing', updated_at = NOW() 
-      WHERE id = $1 AND status != 'completed' AND status != 'processing' 
-      RETURNING *
-    `, [sessionData.id]);
-    
-    const locked = lockRes.rows;
-
-    if (!locked || locked.length === 0) {
-      console.log(`[Cashfree Webhook] Failed to acquire lock for session ${sessionData.id}, ignoring.`);
-      return NextResponse.json({ message: 'Already processing or completed' });
-    }
-
-    // 2. Find the merchant
-    const merchantRes = await pool.query('SELECT * FROM saas_merchants WHERE id = $1', [sessionData.merchant_id]);
-    const merchantData = merchantRes.rows[0];
-
-    if (!merchantData) {
-      console.error('[Cashfree Webhook] Merchant not found');
-      return NextResponse.json({ message: 'Merchant not found' }, { status: 404 });
-    }
-
-    const shopifyUrl = merchantData.shopify_store_url;
-    const formattedUrl = shopifyUrl.startsWith('http') ? shopifyUrl : `https://${shopifyUrl}`;
-    const shopifyToken = merchantData.shopify_access_token || process.env.VITE_SHOPIFY_ACCESS_TOKEN;
-
-    // 3. Complete the Draft Order on Shopify
-    console.log(`[Cashfree Webhook] Fetching draft order ${draftOrderId} on Shopify`);
-    const draftRes = await fetch(`${formattedUrl}/admin/api/2024-04/draft_orders/${draftOrderId}.json`, {
-      headers: { 'X-Shopify-Access-Token': shopifyToken }
-    });
-    const draftData = await draftRes.json();
-    const isPartialCod = draftData.draft_order && draftData.draft_order.tags && draftData.draft_order.tags.includes('Advance_Paid');
-    const paymentPending = isPartialCod ? 'true' : 'false';
-
-    console.log(`[Cashfree Webhook] Completing draft order ${draftOrderId} on Shopify with payment_pending=${paymentPending}`);
-    const completeUrl = `${formattedUrl}/admin/api/2024-04/draft_orders/${draftOrderId}/complete.json?payment_pending=${paymentPending}`;
-    const completeRes = await fetch(completeUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': shopifyToken
+      console.warn(`[Cashfree Webhook] checkout_sessions record not found for draft ${draftOrderId}. Searching active merchants...`);
+      const allMerchants = await pool.query('SELECT * FROM saas_merchants WHERE is_active = true');
+      for (const m of allMerchants.rows) {
+        const sUrl = m.shopify_store_url.startsWith('http') ? m.shopify_store_url : `https://${m.shopify_store_url}`;
+        try {
+          const chk = await fetch(`${sUrl}/admin/api/2024-04/draft_orders/${draftOrderId}.json`, {
+            headers: { 'X-Shopify-Access-Token': m.shopify_access_token }
+          });
+          if (chk.ok) {
+            merchantId = m.id;
+            break;
+          }
+        } catch (e) {}
       }
+
+      if (!merchantId) {
+        console.error(`[Cashfree Webhook] Could not find any store matching draft ${draftOrderId}`);
+        return NextResponse.json({ message: 'Store not found for draft order' }, { status: 404 });
+      }
+    }
+
+    if (sessionData && sessionData.status === 'completed') {
+      console.log(`[Cashfree Webhook] Draft ${draftOrderId} already completed, skipping.`);
+      return NextResponse.json({ message: 'Already completed' });
+    }
+
+    // 2. Delegate to centralized completeShopifyOrder
+    const result = await completeShopifyOrder({
+      merchant_id: merchantId,
+      draft_order_id: draftOrderId,
+      payment_method: cartDetails.payment_method || 'prepaid',
+      cashfree_order_id: orderId,
+      wallet_credit_amount: cartDetails.wallet_credit_amount || 0,
+      shipping_address: cartDetails.shipping_address,
+      phone: phone,
+      device_id: deviceId,
+      skip_cf_verification: true
     });
 
-    const completeData = await completeRes.json();
-    if (!completeRes.ok) {
-      console.error('[Cashfree Webhook] Shopify Draft Complete Error:', completeData);
-    }
+    console.log(`[Cashfree Webhook] Successfully processed draft ${draftOrderId} into Shopify order: ${result.order_id}`);
 
-    const createdOrderId = completeData.draft_order?.order_id || completeData.draft_order?.id;
+    return NextResponse.json({ 
+      success: true, 
+      message: 'Order completed successfully', 
+      order_id: result.order_id 
+    });
 
-    if (createdOrderId) {
-      console.log(`[Cashfree Webhook] Shopify order created: ${createdOrderId}`);
-    }
-
-    // 5. Update checkout session to completed
-    await pool.query(`
-      UPDATE checkout_sessions 
-      SET status = 'completed', payment_status = 'PAID', updated_at = NOW() 
-      WHERE id = $1
-    `, [sessionData.id]);
-
-    return NextResponse.json({ message: 'Success' });
   } catch (error: any) {
     console.error('[Cashfree Webhook] Fatal Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
   }
 }

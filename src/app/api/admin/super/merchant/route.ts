@@ -1,4 +1,4 @@
-import { supabaseFetch } from '../../../../../lib/supabaseFetch';
+import { dbFetch } from '../../../../../lib/dbFetch';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
@@ -18,8 +18,7 @@ export async function PATCH(req: Request) {
     const { id, ...fields } = body;
     if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
 
-    const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+        const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
     // Allowed editable fields
     const allowed = [
@@ -36,7 +35,7 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
     }
 
-    const res = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?id=eq.${id}`, {
+    const res = await dbFetch(`/rest/v1/saas_merchants?id=eq.${id}`, {
       method: 'PATCH',
       headers: {
         'apikey': supabaseKey,

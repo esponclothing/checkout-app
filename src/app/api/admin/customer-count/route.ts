@@ -1,4 +1,4 @@
-import { supabaseFetch } from '../../../../lib/supabaseFetch';
+import { dbFetch } from '../../../../lib/dbFetch';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
@@ -11,11 +11,10 @@ export async function GET(req: Request) {
     }
 
     const merchantId = session.value;
-    const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+        const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
     const sbHeaders = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
 
-    const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?id=eq.${merchantId}`, {
+    const merchantRes = await dbFetch(`/rest/v1/saas_merchants?id=eq.${merchantId}`, {
       headers: sbHeaders
     });
     const merchants = await merchantRes.json();

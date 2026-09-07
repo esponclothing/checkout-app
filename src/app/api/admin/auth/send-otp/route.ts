@@ -1,4 +1,4 @@
-import { supabaseFetch } from '../../../../../lib/supabaseFetch';
+import { dbFetch } from '../../../../../lib/dbFetch';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 
@@ -11,8 +11,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Phone number is required' }, { status: 400 });
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+        const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
     let formattedPhone = phone;
     if (!formattedPhone.startsWith('+')) {
@@ -33,7 +32,7 @@ export async function POST(req: Request) {
     const encodedOr = encodeURIComponent(orQuery);
 
     try {
-      const res = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?or=(${encodedOr})&select=id,payment_settings,is_active`,
+      const res = await dbFetch(`/rest/v1/saas_merchants?or=(${encodedOr})&select=id,payment_settings,is_active`,
         { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
       );
       if (res.ok) merchants = await res.json();

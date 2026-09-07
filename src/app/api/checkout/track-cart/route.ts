@@ -1,4 +1,4 @@
-import { supabaseFetch } from '../../../../lib/supabaseFetch';
+import { dbFetch } from '../../../../lib/dbFetch';
 import { NextResponse } from 'next/server';
 
 export async function OPTIONS() {
@@ -26,11 +26,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, message: 'Cart is empty, skipping' }, { headers });
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+        const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
     // 1. Authenticate Merchant
-    const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id`, {
+    const merchantRes = await dbFetch(`/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
     const merchants = await merchantRes.json();
@@ -41,7 +40,7 @@ export async function POST(req: Request) {
 
     // 2. Find Phone from Device ID (if they logged in previously)
     let phone = null;
-    const deviceRes = await supabaseFetch(`${supabaseUrl}/rest/v1/network_devices?device_id=eq.${device_id}&select=phone`, {
+    const deviceRes = await dbFetch(`/rest/v1/network_devices?device_id=eq.${device_id}&select=phone`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
     const devices = await deviceRes.json();
@@ -51,14 +50,14 @@ export async function POST(req: Request) {
 
     // 3. Upsert into checkout_sessions
     // First, check if there is an existing 'abandoned' session for this device
-    const checkRes = await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?device_id=eq.${device_id}&status=eq.abandoned&order=updated_at.desc&limit=1`, {
+    const checkRes = await dbFetch(`/rest/v1/checkout_sessions?device_id=eq.${device_id}&status=eq.abandoned&order=updated_at.desc&limit=1`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
     const existing = await checkRes.json();
 
     if (existing && existing.length > 0) {
       // Update existing session
-      await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?id=eq.${existing[0].id}`, {
+      await dbFetch(`/rest/v1/checkout_sessions?id=eq.${existing[0].id}`, {
         method: 'PATCH',
         headers: { 
           'apikey': supabaseKey, 
@@ -73,7 +72,7 @@ export async function POST(req: Request) {
       });
     } else {
       // Insert new session
-      await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions`, {
+      await dbFetch(`/rest/v1/checkout_sessions`, {
         method: 'POST',
         headers: { 
           'apikey': supabaseKey, 

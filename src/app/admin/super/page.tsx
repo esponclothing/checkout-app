@@ -1,4 +1,4 @@
-import { supabaseFetch } from '../../../lib/supabaseFetch';
+import { dbFetch } from '../../../lib/dbFetch';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { LayoutDashboard, Users, LogOut } from 'lucide-react';
@@ -8,9 +8,8 @@ import MerchantTable from '../../MerchantTable';
 export const dynamic = 'force-dynamic';
 
 async function getMerchants() {
-  const supabaseUrl = process.env.SUPABASE_URL || '';
-  const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
-  const res = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?order=created_at.desc`, {
+    const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+  const res = await dbFetch(`/rest/v1/saas_merchants?order=created_at.desc`, {
     headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
     cache: 'no-store'
   });

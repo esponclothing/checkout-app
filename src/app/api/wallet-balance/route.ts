@@ -1,4 +1,4 @@
-import { supabaseFetch } from '../../../lib/supabaseFetch';
+import { dbFetch } from '../../../lib/dbFetch';
 import { NextResponse } from 'next/server';
 
 export async function OPTIONS() {
@@ -22,12 +22,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing parameters' }, { status: 400, headers });
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+        const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
     let targetPhone = phone;
     if ((!targetPhone || targetPhone === 'MASKED') && device_id) {
-      const deviceRes = await supabaseFetch(`${supabaseUrl}/rest/v1/network_devices?device_id=eq.${device_id}&select=phone`, {
+      const deviceRes = await dbFetch(`/rest/v1/network_devices?device_id=eq.${device_id}&select=phone`, {
         headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
       });
       const devices = await deviceRes.json();
@@ -40,7 +39,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ storeCreditBalance: 0 }, { headers });
     }
 
-    const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=shopify_access_token,shopify_store_url,payment_settings`,
+    const merchantRes = await dbFetch(`/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=shopify_access_token,shopify_store_url,payment_settings`,
       { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
     );
     const merchants = await merchantRes.json();

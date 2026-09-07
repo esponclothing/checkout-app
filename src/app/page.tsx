@@ -1,4 +1,4 @@
-import { supabaseFetch } from '../lib/supabaseFetch';
+import { dbFetch } from '../lib/dbFetch';
 import { ShieldCheck } from 'lucide-react';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -15,23 +15,22 @@ import AutoRefresh from './AutoRefresh';
 export const dynamic = 'force-dynamic';
 
 async function getDashboardData(merchantId: string) {
-  const supabaseUrl = process.env.SUPABASE_URL || '';
-  const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+    const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
-  const headers = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
+  const headers = {};
 
   // 1. Get Merchant Info
-  const mRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?id=eq.${merchantId}`, { headers, cache: 'no-store' });
+  const mRes = await dbFetch(`/rest/v1/saas_merchants?id=eq.${merchantId}`, { headers, cache: 'no-store' });
   const merchants = mRes.ok ? await mRes.json() : [];
   if (!merchants.length) return null;
   const merchant = merchants[0];
 
   // 2. Get OTP Logs
-  const otpRes = await supabaseFetch(`${supabaseUrl}/rest/v1/otp_logs?merchant_id=eq.${merchantId}&order=created_at.desc`, { headers, cache: 'no-store' });
+  const otpRes = await dbFetch(`/rest/v1/otp_logs?merchant_id=eq.${merchantId}&order=created_at.desc`, { headers, cache: 'no-store' });
   const otpLogs = otpRes.ok ? await otpRes.json() : [];
 
   // 3. Get Checkout Sessions (Abandoned vs Completed)
-  const sessionRes = await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?merchant_id=eq.${merchantId}&order=updated_at.desc`, { headers, cache: 'no-store' });
+  const sessionRes = await dbFetch(`/rest/v1/checkout_sessions?merchant_id=eq.${merchantId}&order=updated_at.desc`, { headers, cache: 'no-store' });
   const sessions = sessionRes.ok ? await sessionRes.json() : [];
   
   const abandoned = sessions.filter((s: any) => s.status === 'abandoned');
@@ -99,11 +98,10 @@ export default async function AdminDashboard(props: { searchParams: Promise<{ ta
   // Fetch all stores this phone can access (for store switcher)
   let allStores: { id: string; name: string; url: string }[] = [];
   try {
-    const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+        const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
     const ownerPhone = data.merchant.owner_phone;
     if (ownerPhone) {
-      const res = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?or=(owner_phone.eq.${encodeURIComponent(ownerPhone)},admin_phones.cs.{"${ownerPhone}"})&select=id,name,shopify_store_url`,
+      const res = await dbFetch(`/rest/v1/saas_merchants?or=(owner_phone.eq.${encodeURIComponent(ownerPhone)},admin_phones.cs.{"${ownerPhone}"})&select=id,name,shopify_store_url`,
         { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }, cache: 'no-store' }
       );
       if (res.ok) {

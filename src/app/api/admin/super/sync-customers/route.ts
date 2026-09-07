@@ -1,4 +1,4 @@
-import { supabaseFetch } from '../../../../../lib/supabaseFetch';
+import { dbFetch } from '../../../../../lib/dbFetch';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
@@ -15,12 +15,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'merchant_id is required' }, { status: 400 });
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+        const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
     const sbHeaders = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
 
     // Get merchant info
-    const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?id=eq.${merchant_id}`, {
+    const merchantRes = await dbFetch(`/rest/v1/saas_merchants?id=eq.${merchant_id}`, {
       headers: sbHeaders, cache: 'no-store'
     });
     const merchants = await merchantRes.json();
@@ -67,7 +66,7 @@ export async function POST(req: Request) {
         if (phone.length === 10) phone = '+91' + phone;
         else if (phone.length > 10 && !phone.startsWith('+')) phone = '+' + phone;
 
-        await supabaseFetch(`${supabaseUrl}/rest/v1/network_users`, {
+        await dbFetch(`/rest/v1/network_users`, {
           method: 'POST',
           headers: { ...sbHeaders, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
           body: JSON.stringify({

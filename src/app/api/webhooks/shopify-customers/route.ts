@@ -1,4 +1,4 @@
-import { supabaseFetch } from '../../../../lib/supabaseFetch';
+import { dbFetch } from '../../../../lib/dbFetch';
 import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
@@ -17,8 +17,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, message: 'Ignored topic' });
     }
 
-    const SUPABASE_URL = process.env.SUPABASE_URL || '';
-    const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || '';
+        const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || '';
 
     let phone = customer.phone || (customer.default_address && customer.default_address.phone);
     
@@ -29,7 +28,7 @@ export async function POST(req: Request) {
       else if (phone.length > 10 && !phone.startsWith('+')) phone = '+' + phone;
 
       // Upsert into network_users
-      await supabaseFetch(`${SUPABASE_URL}/rest/v1/network_users`, {
+      await dbFetch(`/rest/v1/network_users`, {
         method: 'POST',
         headers: {
           'apikey': SUPABASE_KEY,
@@ -48,7 +47,7 @@ export async function POST(req: Request) {
       // Upsert addresses
       if (customer.addresses && customer.addresses.length > 0) {
         for (const addr of customer.addresses) {
-          await supabaseFetch(`${SUPABASE_URL}/rest/v1/network_addresses`, {
+          await dbFetch(`/rest/v1/network_addresses`, {
             method: 'POST',
             headers: {
               'apikey': SUPABASE_KEY,

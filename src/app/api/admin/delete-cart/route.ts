@@ -1,4 +1,4 @@
-import { supabaseFetch } from '../../../../lib/supabaseFetch';
+import { dbFetch } from '../../../../lib/dbFetch';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
@@ -17,8 +17,7 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: 'Missing session_id' }, { status: 400 });
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+        const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
     const sbHeaders = {
       'apikey': supabaseKey,
       'Authorization': `Bearer ${supabaseKey}`,
@@ -26,7 +25,7 @@ export async function DELETE(req: Request) {
     };
 
     // Delete from checkout_sessions table
-    const res = await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?id=eq.${sessionId}`, {
+    const res = await dbFetch(`/rest/v1/checkout_sessions?id=eq.${sessionId}`, {
       method: 'DELETE',
       headers: sbHeaders
     });

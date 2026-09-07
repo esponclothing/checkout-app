@@ -1,5 +1,5 @@
 'use server'
-import { supabaseFetch } from '../lib/supabaseFetch';
+import { dbFetch } from '../lib/dbFetch';
 
 import { revalidatePath } from 'next/cache'
 
@@ -29,10 +29,9 @@ export async function addMerchant(formData: FormData) {
   const randomKey = Math.random().toString(36).substring(2, 15);
   const apiKey = `sk_live_${name.toLowerCase().replace(/[^a-z0-9]/g, '')}_${randomKey}`;
 
-  const supabaseUrl = process.env.SUPABASE_URL || '';
-  const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+    const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
-  const res = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants`, {
+  const res = await dbFetch(`/rest/v1/saas_merchants`, {
     method: 'POST',
     headers: {
       'apikey': supabaseKey,

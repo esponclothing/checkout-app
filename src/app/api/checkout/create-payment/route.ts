@@ -1,4 +1,4 @@
-import { supabaseFetch } from '../../../../lib/supabaseFetch';
+import { dbFetch, pool } from '../../../../lib/dbFetch';
 import { NextResponse } from 'next/server';
 
 export async function OPTIONS() {
@@ -15,17 +15,16 @@ export async function POST(req: Request) {
   const headers = { 'Access-Control-Allow-Origin': '*' };
   
   try {
-    const { merchant_key, draft_order_id, payment_method, customer_phone, customer_email, customer_name, wallet_credit_amount, shipping_address } = await req.json();
+    const { merchant_key, draft_order_id, payment_method, customer_phone, customer_email, customer_name, wallet_credit_amount, shipping_address, device_id } = await req.json();
 
     if (!merchant_key || !draft_order_id || !payment_method) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400, headers });
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL || '';
     const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
     // Fetch Merchant & Payment Settings
-    const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}`, {
+    const merchantRes = await dbFetch(`/rest/v1/saas_merchants?api_key=eq.${merchant_key}`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
     const merchants = await merchantRes.json();
@@ -247,6 +246,47 @@ export async function POST(req: Request) {
     if (!cfRes.ok) {
       console.error('Cashfree Error:', cfData);
       throw new Error(cfData.message || 'Failed to create payment session');
+    }
+
+    // Save / Upsert checkout_sessions record so Cashfree Webhook can complete order even if user drops off
+    try {
+      const sessionDetails = {
+        payment_method,
+        cashfree_order_id: cfOrderPayload.order_id,
+        wallet_credit_amount: walletCredit,
+        customer_email,
+        customer_name,
+        customer_phone,
+        shipping_address,
+        order_amount: orderAmount
+      };
+
+      const existingSessionRes = await pool.query(
+        'SELECT id FROM checkout_sessions WHERE draft_order_id = $1 LIMIT 1',
+        [String(draft_order_id)]
+      );
+
+      if (existingSessionRes.rows.length > 0) {
+        await pool.query(
+          `UPDATE checkout_sessions 
+           SET status = 'pending',
+               cart_details = $1,
+               phone = COALESCE($2, phone),
+               device_id = COALESCE($3, device_id),
+               updated_at = NOW()
+           WHERE id = $4`,
+          [JSON.stringify(sessionDetails), customer_phone || null, device_id || null, existingSessionRes.rows[0].id]
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO checkout_sessions (id, merchant_id, draft_order_id, phone, device_id, status, cart_details, created_at, updated_at)
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, 'pending', $5, NOW(), NOW())`,
+          [merchant.id, String(draft_order_id), customer_phone || null, device_id || 'unknown', JSON.stringify(sessionDetails)]
+        );
+      }
+      console.log(`[CreatePayment] Registered checkout session for draft: ${draft_order_id} (Cashfree: ${cfOrderPayload.order_id})`);
+    } catch (dbErr) {
+      console.error('[CreatePayment] Non-fatal DB session register error:', dbErr);
     }
 
     // Return Payment Session ID to frontend

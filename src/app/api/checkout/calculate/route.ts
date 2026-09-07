@@ -1,4 +1,4 @@
-import { supabaseFetch } from '../../../../lib/supabaseFetch';
+import { dbFetch } from '../../../../lib/dbFetch';
 import { NextResponse } from 'next/server';
 
 export async function OPTIONS() {
@@ -22,11 +22,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400, headers });
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+        const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
     // Fetch merchant Shopify keys
-    const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}`, {
+    const merchantRes = await dbFetch(`/rest/v1/saas_merchants?api_key=eq.${merchant_key}`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
     const merchants = await merchantRes.json();
@@ -127,7 +126,23 @@ export async function POST(req: Request) {
     const shopifyData = await shopifyRes.json();
     
     if (!shopifyRes.ok) {
-      throw new Error(JSON.stringify(shopifyData));
+      console.error('Shopify Draft Order Creation Failed:', shopifyData);
+      let userErrMsg = 'Failed to calculate checkout';
+      if (shopifyData && shopifyData.errors) {
+        if (Array.isArray(shopifyData.errors.base) && shopifyData.errors.base.length > 0) {
+          userErrMsg = shopifyData.errors.base.join('. ');
+        } else if (typeof shopifyData.errors === 'string') {
+          userErrMsg = shopifyData.errors;
+        } else if (typeof shopifyData.errors === 'object') {
+          userErrMsg = Object.entries(shopifyData.errors)
+            .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+            .join('. ');
+        }
+      }
+      return NextResponse.json({ 
+        success: false, 
+        error: userErrMsg 
+      }, { status: 400, headers });
     }
 
     // 3. Log checkout session for Abandoned Checkout tracking
@@ -137,7 +152,7 @@ export async function POST(req: Request) {
     if (true) {
       if (phone === 'MASKED' && deviceId) {
         try {
-          const dRes = await supabaseFetch(`${supabaseUrl}/rest/v1/network_devices?device_id=eq.${deviceId}&select=phone`, {
+          const dRes = await dbFetch(`/rest/v1/network_devices?device_id=eq.${deviceId}&select=phone`, {
             headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
           });
           const dData = await dRes.json();
@@ -149,13 +164,13 @@ export async function POST(req: Request) {
     }
 
     if (true) {
-      const checkRes = await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?device_id=eq.${deviceId}&status=eq.abandoned&order=updated_at.desc&limit=1`, {
+      const checkRes = await dbFetch(`/rest/v1/checkout_sessions?device_id=eq.${deviceId}&status=eq.abandoned&order=updated_at.desc&limit=1`, {
         headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
       });
       const existing = await checkRes.json();
 
       if (existing && existing.length > 0) {
-        await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?id=eq.${existing[0].id}`, {
+        await dbFetch(`/rest/v1/checkout_sessions?id=eq.${existing[0].id}`, {
           method: 'PATCH',
           headers: { 
             'apikey': supabaseKey, 
@@ -171,7 +186,7 @@ export async function POST(req: Request) {
           })
         });
       } else {
-        await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions`, {
+        await dbFetch(`/rest/v1/checkout_sessions`, {
           method: 'POST',
           headers: { 
             'apikey': supabaseKey, 
@@ -205,16 +220,11 @@ export async function POST(req: Request) {
       payment_settings: merchant.payment_settings || {}
     }, { headers });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Calculate API Error:', error);
-    // For prototype purposes, return mock if Shopify creds are missing
     return NextResponse.json({ 
-      success: true, 
-      draft_order_id: 99999999,
-      subtotal: "999.00",
-      total_tax: "0.00",
-      total_price: "999.00",
-      mock_warning: "Shopify keys were missing, returning mock calculation."
-    }, { headers });
+      success: false, 
+      error: error?.message || 'Failed to calculate checkout totals. Please try again.' 
+    }, { status: 500, headers });
   }
 }

@@ -4,7 +4,7 @@ export const pool = new Pool({
   connectionString: process.env.RAILWAY_DATABASE_URL || process.env.DATABASE_URL
 });
 
-export async function supabaseFetch(url: string, options: any = {}) {
+export async function dbFetch(url: string, options: any = {}) {
   try {
     const urlObj = new URL(url, 'http://dummy.internal');
     const pathParts = urlObj.pathname.split('/');
@@ -97,8 +97,16 @@ export async function supabaseFetch(url: string, options: any = {}) {
       const prefer = options.headers?.['Prefer'] || options.headers?.['prefer'];
       let conflictStr = '';
       if (prefer === 'resolution=merge-duplicates') {
-        // Get primary key for this table (naive approach: assume id or phone)
-        const pk = keys.includes('id') ? 'id' : (keys.includes('phone') ? 'phone' : (keys.includes('device_id') ? 'device_id' : keys[0]));
+        const TABLE_PK: Record<string, string> = {
+          network_devices: 'device_id',
+          network_users: 'phone',
+          network_addresses: 'id',
+          checkout_sessions: 'id',
+          otp_logs: 'id',
+          saas_merchants: 'id',
+          return_requests: 'id'
+        };
+        const pk = TABLE_PK[tableName] || (keys.includes('device_id') && tableName === 'network_devices' ? 'device_id' : (keys.includes('id') ? 'id' : (keys.includes('phone') ? 'phone' : (keys.includes('device_id') ? 'device_id' : keys[0]))));
         const updateSets = keys.map(k => `"${k}" = EXCLUDED."${k}"`).join(', ');
         conflictStr = ` ON CONFLICT ("${pk}") DO UPDATE SET ${updateSets}`;
       }
@@ -131,7 +139,7 @@ export async function supabaseFetch(url: string, options: any = {}) {
     };
 
   } catch (error) {
-    console.error('supabaseFetch Error:', error);
+    console.error('dbFetch Error:', error);
     return {
       ok: false,
       status: 500,

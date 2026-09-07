@@ -1,4 +1,4 @@
-import { supabaseFetch } from '../../../../lib/supabaseFetch';
+import { dbFetch } from '../../../../lib/dbFetch';
 import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -6,11 +6,10 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: Request) {
   try {
     // Note: Vercel sends a CRON authorization header, but for simplicity we will let it run.
-    const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+        const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
     // 1. Fetch all merchants
-    const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?select=id,name,payment_settings`, {
+    const merchantRes = await dbFetch(`/rest/v1/saas_merchants?select=id,name,payment_settings`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
     const merchants = await merchantRes.json();
@@ -35,7 +34,7 @@ export async function GET(req: Request) {
       // We look for status = 'abandoned', updated_at <= cutoffTime
       // Supabase REST API doesn't easily filter on nested JSON properties (recovery_sent), 
       // so we filter in memory.
-      const sessionsRes = await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?merchant_id=eq.${merchant.id}&status=eq.abandoned&updated_at=lte.${cutoffTime}`, {
+      const sessionsRes = await dbFetch(`/rest/v1/checkout_sessions?merchant_id=eq.${merchant.id}&status=eq.abandoned&updated_at=lte.${cutoffTime}`, {
         headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
       });
       const sessions = await sessionsRes.json();
@@ -135,7 +134,7 @@ export async function GET(req: Request) {
           processedCount++;
           // 4. Mark as sent
           const updatedCart = { ...cart, recovery_sent: true };
-          await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?id=eq.${session.id}`, {
+          await dbFetch(`/rest/v1/checkout_sessions?id=eq.${session.id}`, {
             method: 'PATCH',
             headers: { 
               'apikey': supabaseKey, 

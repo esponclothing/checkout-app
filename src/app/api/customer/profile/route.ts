@@ -1,4 +1,4 @@
-import { supabaseFetch } from '../../../../lib/supabaseFetch';
+import { dbFetch } from '../../../../lib/dbFetch';
 import { NextResponse } from 'next/server';
 
 export async function OPTIONS() {
@@ -26,13 +26,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Phone number is required' }, { status: 400, headers });
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+        const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
     
 
     // 1. Fetch merchant credentials (Cached)
-    const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id,name,shopify_access_token,shopify_store_url`,
+    const merchantRes = await dbFetch(`/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id,name,shopify_access_token,shopify_store_url`,
       { 
         headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
         next: { revalidate: 300 }
@@ -57,11 +56,11 @@ export async function POST(req: Request) {
     }
 
     // 2. Prepare parallel promises for User, Addresses, and Store Credit
-    const fetchUser = supabaseFetch(`${supabaseUrl}/rest/v1/network_users?phone=eq.${encodeURIComponent(formattedPhone)}&select=*`,
+    const fetchUser = dbFetch(`/rest/v1/network_users?phone=eq.${encodeURIComponent(formattedPhone)}&select=*`,
       { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
     ).then(res => res.json()).catch(() => []);
 
-    const fetchAddr = supabaseFetch(`${supabaseUrl}/rest/v1/network_addresses?phone=eq.${encodeURIComponent(formattedPhone)}&select=*&order=is_default.desc,created_at.desc`,
+    const fetchAddr = dbFetch(`/rest/v1/network_addresses?phone=eq.${encodeURIComponent(formattedPhone)}&select=*&order=is_default.desc,created_at.desc`,
       { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
     ).then(res => res.ok ? res.json() : []).catch(() => []);
 
@@ -143,8 +142,7 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400, headers });
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+        const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
     let formattedPhone = phone;
     if (!formattedPhone.startsWith('+')) {
@@ -157,7 +155,7 @@ export async function PATCH(req: Request) {
     if (last_name !== undefined) updateData.last_name = last_name;
     if (email !== undefined) updateData.email = email;
 
-    await supabaseFetch(`${supabaseUrl}/rest/v1/network_users`, {
+    await dbFetch(`/rest/v1/network_users`, {
       method: 'POST',
       headers: {
         'apikey': supabaseKey,

@@ -1,4 +1,4 @@
-import { supabaseFetch } from '../../../lib/supabaseFetch';
+import { dbFetch } from '../../../lib/dbFetch';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 
@@ -29,8 +29,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Phone number is required' }, { status: 400, headers });
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+        const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
     
     let resolvedPhone = phone;
     if (resolvedPhone) {
@@ -47,7 +46,7 @@ export async function POST(req: Request) {
 
     // 1. Verify merchant and fetch device phone if needed
     if (true) {
-      const merchantRes = await supabaseFetch(`${supabaseUrl}/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id,payment_settings`, {
+      const merchantRes = await dbFetch(`/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=id,payment_settings`, {
         headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
       });
       const merchants = await merchantRes.json();
@@ -63,7 +62,7 @@ export async function POST(req: Request) {
       
       // If phone is missing but device_id is present, get the phone from DB
       if (!resolvedPhone && device_id) {
-        const deviceRes = await supabaseFetch(`${supabaseUrl}/rest/v1/network_devices?device_id=eq.${device_id}&select=phone`, {
+        const deviceRes = await dbFetch(`/rest/v1/network_devices?device_id=eq.${device_id}&select=phone`, {
           headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
         });
         const devices = await deviceRes.json();
@@ -77,7 +76,7 @@ export async function POST(req: Request) {
         const ipAddress = req.headers.get('x-forwarded-for') || 'unknown';
         const cleanIp = ipAddress.split(',')[0].trim();
         if (cleanIp !== 'unknown') {
-          const ipRes = await supabaseFetch(`${supabaseUrl}/rest/v1/network_devices?ip_address=eq.${cleanIp}&select=phone&order=created_at.desc&limit=1`, {
+          const ipRes = await dbFetch(`/rest/v1/network_devices?ip_address=eq.${cleanIp}&select=phone&order=created_at.desc&limit=1`, {
             headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
           });
           const ipDevices = await ipRes.json();
@@ -155,8 +154,8 @@ export async function POST(req: Request) {
     console.log('[11FIT OTP] Sent successfully:', waResult.messages?.[0]?.id);
 
     // 5. Log to OTP Analytics
-    if (supabaseUrl && supabaseKey && merchantId) {
-      await supabaseFetch(`${supabaseUrl}/rest/v1/otp_logs`, {
+    if (merchantId) {
+      await dbFetch(`/rest/v1/otp_logs`, {
         method: 'POST',
         headers: { 
           'apikey': supabaseKey, 
@@ -175,12 +174,12 @@ export async function POST(req: Request) {
       // 6. IMMEDIATELY map the phone number to the checkout session
       if (device_id) {
         // Find existing session
-        const sessionRes = await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?device_id=eq.${device_id}&status=eq.abandoned&order=updated_at.desc&limit=1`, {
+        const sessionRes = await dbFetch(`/rest/v1/checkout_sessions?device_id=eq.${device_id}&status=eq.abandoned&order=updated_at.desc&limit=1`, {
           headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
         });
         const existingSession = await sessionRes.json();
         if (existingSession && existingSession.length > 0) {
-          await supabaseFetch(`${supabaseUrl}/rest/v1/checkout_sessions?id=eq.${existingSession[0].id}`, {
+          await dbFetch(`/rest/v1/checkout_sessions?id=eq.${existingSession[0].id}`, {
             method: 'PATCH',
             headers: { 
               'apikey': supabaseKey, 

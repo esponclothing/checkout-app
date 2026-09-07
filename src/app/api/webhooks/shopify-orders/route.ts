@@ -1,4 +1,4 @@
-import { supabaseFetch } from '../../../../lib/supabaseFetch';
+import { dbFetch } from '../../../../lib/dbFetch';
 import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
@@ -54,12 +54,11 @@ export async function POST(req: Request) {
     }
 
     // Get the merchant token using the shop domain
-    const SUPABASE_URL = process.env.SUPABASE_URL || '';
-    const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || '';
+        const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || '';
 
     let cleanStore = (shopDomain as string).trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
     
-    const merchantRes = await supabaseFetch(`${SUPABASE_URL}/rest/v1/saas_merchants?shopify_store_url=eq.${cleanStore}&select=shopify_access_token,payment_settings,name`, {
+    const merchantRes = await dbFetch(`/rest/v1/saas_merchants?shopify_store_url=eq.${cleanStore}&select=shopify_access_token,payment_settings,name`, {
       headers: {
         'apikey': SUPABASE_KEY,
         'Authorization': `Bearer ${SUPABASE_KEY}`
@@ -218,7 +217,29 @@ export async function POST(req: Request) {
             const itemCount = order.line_items?.length || 1;
             const orderIdStr = order.name || order.order_number || order.id;
             
-            if (workflows.template_name === 'order') {
+            if (workflows.template_name === 'order_confirmed_v2') {
+              const itemsList = (order.line_items || []).map((li: any) => {
+                const qty = li.quantity || 1;
+                const name = li.title || 'Item';
+                const variant = li.variant_title && li.variant_title !== 'Default Title' ? ` (${li.variant_title})` : '';
+                return `${qty}x ${name}${variant}`;
+              });
+              const itemsSummary = itemsList.length > 0 ? itemsList.join(', ') : (productName || 'Your order items');
+              const paymentInfo = `${totalAmount} (Partial COD: ₹${parseFloat(order.total_price).toFixed(0)} Paid, ₹${remainingAmount.toFixed(0)} Due)`;
+              const addrParts = [
+                order.shipping_address?.address1,
+                order.shipping_address?.city,
+                order.shipping_address?.province,
+                order.shipping_address?.zip
+              ].filter(Boolean);
+              const addressSummary = addrParts.length > 0 ? addrParts.join(', ') : 'Delivery address on file';
+
+              dynamicParams.push({ type: 'text', text: customerName });
+              dynamicParams.push({ type: 'text', text: String(orderIdStr) });
+              dynamicParams.push({ type: 'text', text: String(itemsSummary).substring(0, 100) });
+              dynamicParams.push({ type: 'text', text: String(paymentInfo) });
+              dynamicParams.push({ type: 'text', text: String(addressSummary).substring(0, 100) });
+            } else if (workflows.template_name === 'order') {
               dynamicParams.push({ type: 'text', text: customerName });
               dynamicParams.push({ type: 'text', text: productName });
               dynamicParams.push({ type: 'text', text: totalAmount });
@@ -254,26 +275,45 @@ export async function POST(req: Request) {
               } catch(e){}
             }
 
-            const payload = {
+            const payloadUs = {
               messaging_product: 'whatsapp',
               recipient_type: 'individual',
               to: sendPhone,
               type: 'template',
               template: {
                 name: workflows.template_name,
-                language: { code: 'en' },
+                language: { code: 'en_US' },
                 components
               }
             };
             
-            await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
+            const wRes = await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${META_TOKEN}`,
                 'Content-Type': 'application/json'
               },
-              body: JSON.stringify(payload)
+              body: JSON.stringify(payloadUs)
             });
+
+            if (!wRes.ok) {
+              const payloadEn = {
+                ...payloadUs,
+                template: {
+                  name: workflows.template_name,
+                  language: { code: 'en' },
+                  components
+                }
+              };
+              await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${META_TOKEN}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payloadEn)
+              });
+            }
             console.log('Fired WhatsApp confirmation for partial COD order');
           } catch(e) { console.error('WA Partial COD confirmation error:', e); }
         })();
