@@ -19,7 +19,9 @@ export interface CompleteOrderParams {
 export interface CompleteOrderResult {
   success: boolean;
   order_id?: string | number;
+  shopify_order_id?: string | number;
   already_completed?: boolean;
+  is_confirmed?: boolean;
   error?: string;
 }
 
@@ -175,10 +177,24 @@ export async function completeShopifyOrder(params: CompleteOrderParams): Promise
   if (existingDraft.status === 'completed' && existingDraft.order_id) {
     console.log(`[OrderCompletion] Draft order ${draftOrderId} was already completed on Shopify (Order ID: ${existingDraft.order_id})`);
     await pool.query(`UPDATE checkout_sessions SET status = 'completed', updated_at = NOW() WHERE draft_order_id = $1`, [draftOrderId]);
+    
+    let existingOrderName = existingDraft.order_id;
+    try {
+      const orderInfoRes = await fetch(`${formattedUrl}/admin/api/2024-04/orders/${existingDraft.order_id}.json?fields=id,name,order_number`, {
+        headers: { 'X-Shopify-Access-Token': shopifyToken }
+      });
+      if (orderInfoRes.ok) {
+        const oData = await orderInfoRes.json();
+        if (oData.order?.name) existingOrderName = oData.order.name;
+      }
+    } catch(e) {}
+
     return {
       success: true,
       already_completed: true,
-      order_id: existingDraft.order_id
+      order_id: existingOrderName,
+      shopify_order_id: existingDraft.order_id,
+      is_confirmed: true
     };
   }
 
@@ -424,8 +440,8 @@ export async function completeShopifyOrder(params: CompleteOrderParams): Promise
   if (!completeRes.ok || !completeData.draft_order || !completeData.draft_order.order_id) {
     console.log('[OrderCompletion] complete.json response missing order_id. Retrying fetch of draft order...');
     let gotOrderId = false;
-    for (let retry = 0; retry < 3; retry++) {
-      await new Promise(r => setTimeout(r, 1000));
+    for (let retry = 0; retry < 5; retry++) {
+      await new Promise(r => setTimeout(r, 1500));
       try {
         const getDraft = await fetch(`${formattedUrl}/admin/api/2024-04/draft_orders/${draftOrderId}.json`, {
           headers: { 'X-Shopify-Access-Token': shopifyToken }
@@ -439,14 +455,16 @@ export async function completeShopifyOrder(params: CompleteOrderParams): Promise
       } catch (e) {}
     }
 
-    if (!gotOrderId && !completeRes.ok) {
-      throw new Error(`Shopify Complete Error: ${JSON.stringify(completeData)}`);
-    } else if (!gotOrderId && completeData.draft_order) {
-      completeData.draft_order.order_id = completeData.draft_order.id;
+    if (!gotOrderId) {
+      console.error(`[OrderCompletion] Shopify failed to convert draft ${draftOrderId} to confirmed order:`, completeData);
+      throw new Error(`Shopify Complete Error: Draft order ${draftOrderId} was not converted to a confirmed order.`);
     }
   }
 
   const createdOrderId = completeData.draft_order?.order_id;
+  if (!createdOrderId || String(createdOrderId) === String(draftOrderId)) {
+    throw new Error(`Invalid order conversion: draft ${draftOrderId} was not assigned a confirmed Shopify order ID.`);
+  }
   console.log(`[OrderCompletion] Successfully converted draft ${draftOrderId} to Shopify Order: ${createdOrderId}`);
 
   // 8. Order Note and Tags on Final Order
@@ -854,9 +872,9 @@ export async function completeShopifyOrder(params: CompleteOrderParams): Promise
     [draftOrderId]
   );
 
-  let finalOrderName = completeData.draft_order.order_id;
+  let finalOrderName = '#' + String(completeData.draft_order.order_id);
   try {
-    const orderInfoRes = await fetch(`${formattedUrl}/admin/api/2024-04/orders/${completeData.draft_order.order_id}.json`, {
+    const orderInfoRes = await fetch(`${formattedUrl}/admin/api/2024-04/orders/${createdOrderId}.json?fields=id,name,order_number`, {
       headers: { 'X-Shopify-Access-Token': shopifyToken }
     });
     if (orderInfoRes.ok) {
@@ -865,11 +883,15 @@ export async function completeShopifyOrder(params: CompleteOrderParams): Promise
         finalOrderName = orderInfo.order.name;
       }
     }
-  } catch (e) {}
+  } catch (e) {
+    console.warn('[OrderCompletion] Non-fatal order fetch error:', e);
+  }
 
   return {
     success: true,
-    order_id: finalOrderName
+    order_id: finalOrderName,
+    shopify_order_id: createdOrderId,
+    is_confirmed: true
   };
   } catch (err: any) {
     console.error(`[OrderCompletion] Error completing draft order ${draftOrderId}:`, err);

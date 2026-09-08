@@ -48,7 +48,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ 
       success: true, 
       order_id: result.order_id,
+      shopify_order_id: result.shopify_order_id,
       already_completed: result.already_completed,
+      is_confirmed: result.is_confirmed ?? true,
       message: 'Order confirmed successfully!'
     }, { headers });
 
