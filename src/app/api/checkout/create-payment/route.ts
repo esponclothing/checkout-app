@@ -227,7 +227,8 @@ export async function POST(req: Request) {
         customer_name: customer_name || 'Customer'
       },
       order_meta: {
-        return_url: `${formattedUrl}/cart?cf_order_id={order_id}&draft_order_id=${draft_order_id}&status={order_status}`
+        return_url: `${formattedUrl}/cart?cf_order_id={order_id}&draft_order_id=${draft_order_id}&status={order_status}`,
+        notify_url: 'https://checkout.11fit.in/api/webhooks/cashfree'
       }
     };
 

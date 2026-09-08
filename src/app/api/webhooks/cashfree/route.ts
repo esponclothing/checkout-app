@@ -12,12 +12,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: 'Invalid JSON body' }, { status: 400 });
     }
 
-    if (body.type !== 'PAYMENT_SUCCESS_WEBHOOK') {
-      console.log(`[Cashfree Webhook] Ignoring non-success event: ${body.type}`);
-      return NextResponse.json({ message: 'Ignored, not a success event' });
+    const eventType = body.type || body.event;
+    const validEvents = ['PAYMENT_SUCCESS_WEBHOOK', 'ORDER_PAID_WEBHOOK', 'ORDER_PAID', 'order.paid'];
+    if (!validEvents.includes(eventType)) {
+      console.log(`[Cashfree Webhook] Ignoring event: ${eventType}`);
+      return NextResponse.json({ message: 'Ignored, not a payment success event' });
     }
 
-    const orderId = body.data?.order?.order_id;
+    const orderId = body.data?.order?.order_id 
+      || body.data?.payment?.order_id 
+      || body.order?.order_id 
+      || body.order_id 
+      || body.data?.order_id;
+
     if (!orderId || !orderId.startsWith('draft_')) {
       console.warn(`[Cashfree Webhook] Invalid or unrecognized order_id: ${orderId}`);
       return NextResponse.json({ message: 'Invalid or missing order_id' });
@@ -29,7 +36,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: 'Could not extract draft_order_id' });
     }
 
-    console.log(`[Cashfree Webhook] Processing PAYMENT_SUCCESS_WEBHOOK for draft: ${draftOrderId} (Cashfree: ${orderId})`);
+    console.log(`[Cashfree Webhook] Processing event "${eventType}" for draft: ${draftOrderId} (Cashfree: ${orderId})`);
 
     // 1. Find checkout session
     const sessionRes = await pool.query(

@@ -29,6 +29,8 @@ export async function completeShopifyOrder(params: CompleteOrderParams): Promise
 
   console.log(`[OrderCompletion] Starting completion for draft: ${draftOrderId}, method: ${params.payment_method}`);
 
+  try {
+
   // 1. Resolve Merchant
   let merchant = params.merchant;
   if (!merchant) {
@@ -99,11 +101,11 @@ export async function completeShopifyOrder(params: CompleteOrderParams): Promise
       };
     }
 
-    // Try to acquire atomic lock (from pending or abandoned or anything not completed/processing)
+    // Try to acquire atomic lock (from pending or abandoned or anything not completed/processing, or stale processing > 20s)
     const lockRes = await pool.query(
       `UPDATE checkout_sessions 
        SET status = 'processing', updated_at = NOW() 
-       WHERE id = $1 AND status != 'completed' AND status != 'processing'
+       WHERE id = $1 AND (status != 'completed' AND (status != 'processing' OR updated_at < NOW() - INTERVAL '20 seconds'))
        RETURNING *`,
       [existingSession.id]
     );
@@ -322,6 +324,51 @@ export async function completeShopifyOrder(params: CompleteOrderParams): Promise
     }
   }
 
+  // 6. Cashfree Verification (PERFORMED BEFORE COMMITTING DRAFT NOTES/UPDATES)
+  if (params.cashfree_order_id && merchant.payment_settings && !params.skip_cf_verification) {
+    const cashfreeUrl = merchant.payment_settings.cashfree_env === 'production'
+      ? `https://api.cashfree.com/pg/orders/${params.cashfree_order_id}`
+      : `https://sandbox.cashfree.com/pg/orders/${params.cashfree_order_id}`;
+
+    let cfData: any = null;
+    let cfStatus = '';
+
+    // Polling retry loop: up to 5 attempts (total ~10s) with 2s delay to accommodate bank settlement
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      try {
+        const cfVerifyRes = await fetch(cashfreeUrl, {
+          headers: {
+            'x-client-id': merchant.payment_settings.cashfree_app_id,
+            'x-client-secret': merchant.payment_settings.cashfree_secret_key,
+            'x-api-version': '2023-08-01'
+          }
+        });
+
+        if (cfVerifyRes.ok) {
+          cfData = await cfVerifyRes.json();
+          cfStatus = cfData.order_status;
+          console.log(`[OrderCompletion] Cashfree order ${params.cashfree_order_id} attempt ${attempt}/5: status=${cfStatus}`);
+          if (cfStatus === 'PAID') {
+            break;
+          }
+        } else {
+          const errBody = await cfVerifyRes.text();
+          console.warn(`[OrderCompletion] Cashfree check attempt ${attempt}/5 returned status ${cfVerifyRes.status}:`, errBody);
+        }
+      } catch (cfFetchErr) {
+        console.warn(`[OrderCompletion] Cashfree check attempt ${attempt}/5 network error:`, cfFetchErr);
+      }
+
+      if (attempt < 5) {
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+
+    if (cfStatus !== 'PAID') {
+      throw new Error(`Payment not completed. Status: ${cfStatus || 'UNKNOWN'}`);
+    }
+  }
+
   if (params.cashfree_order_id) {
     const existingNote = draftPayload.note || existingDraft.note || '';
     const cfNote = `Paid via Cashfree (Online) - Transaction ID: ${params.cashfree_order_id}`;
@@ -342,30 +389,6 @@ export async function completeShopifyOrder(params: CompleteOrderParams): Promise
       });
     } catch (e) {
       console.error('[OrderCompletion] Error updating draft order before complete:', e);
-    }
-  }
-
-  // 6. Cashfree Verification
-  if (params.cashfree_order_id && merchant.payment_settings && !params.skip_cf_verification) {
-    const cashfreeUrl = merchant.payment_settings.cashfree_env === 'production'
-      ? `https://api.cashfree.com/pg/orders/${params.cashfree_order_id}`
-      : `https://sandbox.cashfree.com/pg/orders/${params.cashfree_order_id}`;
-
-    const cfVerifyRes = await fetch(cashfreeUrl, {
-      headers: {
-        'x-client-id': merchant.payment_settings.cashfree_app_id,
-        'x-client-secret': merchant.payment_settings.cashfree_secret_key,
-        'x-api-version': '2023-08-01'
-      }
-    });
-
-    if (!cfVerifyRes.ok) {
-      throw new Error('Failed to verify payment with Cashfree gateway');
-    }
-
-    const cfData = await cfVerifyRes.json();
-    if (cfData.order_status !== 'PAID') {
-      throw new Error(`Payment not completed. Status: ${cfData.order_status}`);
     }
   }
 
@@ -848,4 +871,16 @@ export async function completeShopifyOrder(params: CompleteOrderParams): Promise
     success: true,
     order_id: finalOrderName
   };
+  } catch (err: any) {
+    console.error(`[OrderCompletion] Error completing draft order ${draftOrderId}:`, err);
+    try {
+      await pool.query(
+        `UPDATE checkout_sessions 
+         SET status = 'pending', updated_at = NOW() 
+         WHERE draft_order_id = $1 AND status = 'processing'`,
+        [draftOrderId]
+      );
+    } catch (e) {}
+    throw err;
+  }
 }
