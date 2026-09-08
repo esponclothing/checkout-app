@@ -13,9 +13,14 @@ export async function POST(req: Request) {
     }
 
     const eventType = body.type || body.event;
+    if (eventType === 'WEBHOOK' || eventType === 'TEST' || eventType === 'TEST_WEBHOOK') {
+      console.log(`[Cashfree Webhook] Test webhook ping received successfully from Cashfree.`);
+      return NextResponse.json({ success: true, message: 'Test webhook received successfully' }, { status: 200 });
+    }
+
     const validEvents = ['PAYMENT_SUCCESS_WEBHOOK', 'ORDER_PAID_WEBHOOK', 'ORDER_PAID', 'order.paid'];
     if (!validEvents.includes(eventType)) {
-      console.log(`[Cashfree Webhook] Ignoring event: ${eventType}`);
+      console.log(`[Cashfree Webhook] Ignoring non-payment event: ${eventType}`);
       return NextResponse.json({ message: 'Ignored, not a payment success event' });
     }
 
