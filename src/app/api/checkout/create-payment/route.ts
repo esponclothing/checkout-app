@@ -22,6 +22,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400, headers });
     }
 
+    // COD orders must never create a Cashfree session — they go directly to /checkout/complete
+    if (payment_method === 'cod') {
+      console.error(`[CreatePayment] Blocked: payment_method=cod received for draft ${draft_order_id}. COD orders must use /checkout/complete directly.`);
+      return NextResponse.json({ error: 'COD orders do not require an online payment session.' }, { status: 400, headers });
+    }
+
     const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
     // Fetch Merchant & Payment Settings

@@ -70,14 +70,31 @@ export async function POST(req: Request) {
     // Existing coupon / promo discount on draft (preserve it)
     const currentDiscountStr = draftOrder.applied_discount ? draftOrder.applied_discount.amount : '0.00';
     const currentDiscount = parseFloat(currentDiscountStr);
+    const currentDiscountTitle = (draftOrder.applied_discount && draftOrder.applied_discount.title) ? draftOrder.applied_discount.title : '';
 
     // For partial_cod: keep the full order price in Shopify (no discount applied to draft).
-    // The advance is collected via Cashfree; Shopify will show "Partially Paid" after a transaction is posted in complete.
     // For prepaid: apply the prepaid discount to reduce the order total.
+    // For cod: STRIP any prepaid-related discount — only keep cart/coupon discounts.
     let newDiscountValue = currentDiscount;
-    let newDiscountTitle = (draftOrder.applied_discount && draftOrder.applied_discount.title) ? draftOrder.applied_discount.title : '';
+    let newDiscountTitle = currentDiscountTitle;
 
-    if (payment_method === 'prepaid' && prepaidDiscount > 0) {
+    if (payment_method === 'cod') {
+      // Remove any prepaid offer discount that may have been applied during an earlier payment method selection
+      if (prepaidDiscount > 0) {
+        // prepaidDiscount was recalculated above; strip it from the existing discount
+        newDiscountValue = Math.max(0, currentDiscount - prepaidDiscount);
+      } else if (currentDiscountTitle.toLowerCase().includes('prepaid')) {
+        // If title indicates it was a prepaid discount and we can't calculate separately, clear it entirely
+        newDiscountValue = 0;
+      }
+      // Strip 'Prepaid Offer' from the discount title
+      newDiscountTitle = newDiscountTitle
+        .replace(/\s*\+?\s*Prepaid Offer/gi, '')
+        .replace(/Prepaid Offer\s*\+?\s*/gi, '')
+        .trim()
+        .replace(/^\+|\+$/g, '')
+        .trim();
+    } else if (payment_method === 'prepaid' && prepaidDiscount > 0) {
       newDiscountValue = currentDiscount + prepaidDiscount;
       newDiscountTitle = newDiscountTitle ? `${newDiscountTitle} + Prepaid Offer` : 'Prepaid Offer';
     }
@@ -98,7 +115,6 @@ export async function POST(req: Request) {
       }
     };
 
-    // Only set applied_discount if there is a discount to apply (coupon or prepaid)
     if (newDiscountValue > 0) {
       updatePayload.draft_order.applied_discount = {
         title: newDiscountTitle || 'Discount',
@@ -106,7 +122,7 @@ export async function POST(req: Request) {
         value_type: 'fixed_amount'
       };
     } else if (draftOrder.applied_discount && payment_method !== 'partial_cod') {
-      // Clear existing discount only for non-partial-cod payment method changes
+      // Clear existing discount for COD/prepaid payment method changes that result in zero discount
       updatePayload.draft_order.applied_discount = {
         title: '',
         value: '0.00',
