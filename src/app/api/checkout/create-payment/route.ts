@@ -1,5 +1,6 @@
 import { dbFetch, pool } from '../../../../lib/dbFetch';
 import { NextResponse } from 'next/server';
+import { completeShopifyOrder } from '../../../../lib/orderCompletion';
 
 export async function OPTIONS() {
   return NextResponse.json({}, {
@@ -210,6 +211,45 @@ export async function POST(req: Request) {
       }
     } catch(e) { console.error('Failed to update draft order:', e); }
     // --- END INJECTED UPDATE DRAFT LOGIC ---
+
+    // 0-Amount Bypass: If order total is fully covered by store credit or discounts (0 INR payable online)
+    if (orderAmount <= 0) {
+      console.log(`[CreatePayment] Order amount is ₹${orderAmount} (zero payable online). Directly completing draft order ${draft_order_id}...`);
+      const compResult = await completeShopifyOrder({
+        merchant,
+        merchant_id: merchant.id,
+        merchant_key,
+        draft_order_id,
+        shipping_address,
+        email: customer_email,
+        phone: customer_phone,
+        device_id,
+        payment_method: payment_method === 'partial_cod' ? 'cod' : 'prepaid',
+        wallet_credit_amount: walletCredit,
+        skip_cf_verification: true
+      });
+
+      return NextResponse.json({
+        success: true,
+        zero_amount: true,
+        order_id: compResult.order_id,
+        shopify_order_id: compResult.shopify_order_id,
+        order_amount: 0,
+        redirect_url: `${formattedUrl}/pages/order-confirmation?order_id=${compResult.shopify_order_id || compResult.order_id}`,
+        message: 'Order completed successfully!'
+      }, { headers });
+    }
+
+    if (isNaN(orderAmount) || !isFinite(orderAmount)) {
+      orderAmount = totalPrice;
+    }
+
+    // Cashfree PG minimum order amount is 1.00 INR
+    if (orderAmount > 0 && orderAmount < 1.00) {
+      orderAmount = 1.00;
+    } else {
+      orderAmount = parseFloat(orderAmount.toFixed(2));
+    }
 
     // Create Cashfree Order
     const cashfreeUrl = paymentSettings.cashfree_env === 'production' 
