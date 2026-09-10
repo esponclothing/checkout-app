@@ -45,6 +45,17 @@ export async function POST(req: Request) {
       skip_cf_verification: false
     });
 
+    // Payment is still being verified (Cashfree redirect before webhook settles)
+    if ((result as any).payment_pending) {
+      return NextResponse.json({
+        success: false,
+        payment_pending: true,
+        cashfree_order_id: body.cashfree_order_id,
+        draft_order_id: body.draft_order_id,
+        message: 'Payment is being verified. Please wait...'
+      }, { status: 202, headers });
+    }
+
     return NextResponse.json({ 
       success: true, 
       order_id: result.order_id,

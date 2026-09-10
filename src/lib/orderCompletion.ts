@@ -381,7 +381,15 @@ export async function completeShopifyOrder(params: CompleteOrderParams): Promise
     }
 
     if (cfStatus !== 'PAID') {
-      throw new Error(`Payment not completed. Status: ${cfStatus || 'UNKNOWN'}`);
+      // Payment is still processing (e.g. bank settlement delay). 
+      // Release the processing lock so the webhook can re-enter and complete it.
+      await pool.query(`UPDATE checkout_sessions SET status = 'pending', updated_at = NOW() WHERE draft_order_id = $1`, [draftOrderId]);
+      console.warn(`[OrderCompletion] Payment not yet settled for ${params.cashfree_order_id}. Status: ${cfStatus}. Returning pending — webhook will complete.`);
+      return {
+        success: false,
+        payment_pending: true,
+        error: `Payment is being verified. Status: ${cfStatus || 'UNKNOWN'}`
+      } as any;
     }
   }
 
