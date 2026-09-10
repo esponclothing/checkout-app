@@ -13,11 +13,11 @@ export async function OPTIONS() {
 
 export async function POST(req: Request) {
   const headers = { 'Access-Control-Allow-Origin': '*' };
-  
+
   try {
     const body = await req.json();
     const { merchant_key, phone, action, address_data } = body;
-    
+
     // In production, validate a JWT here!
 
     if (!merchant_key || !phone) {
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
 
     const formattedPhone = phone.startsWith('+') ? phone : `+91${phone.replace(/\D/g, '')}`;
 
-        const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+    const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
     // Fetch existing addresses
     if (action === 'FETCH') {
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
         const merchants = await merchantRes.json();
         if (merchants && merchants.length > 0) {
           const { shopify_store_url, shopify_access_token } = merchants[0];
-          let formattedUrl = shopify_store_url.startsWith('http') ? shopify_store_url : `https://${shopify_store_url}`;
+          const formattedUrl = shopify_store_url.startsWith('http') ? shopify_store_url : `https://${shopify_store_url}`;
           const searchRes = await fetch(`${formattedUrl}/admin/api/2024-01/customers/search.json?query=phone:${encodeURIComponent(formattedPhone)}&limit=1`, {
             headers: { 'X-Shopify-Access-Token': shopify_access_token, 'Content-Type': 'application/json' },
             cache: 'no-store'
@@ -81,6 +81,11 @@ export async function POST(req: Request) {
       const cleanAddressData = { ...address_data };
       delete cleanAddressData.email;
       delete cleanAddressData.company;
+      // DB column is 'province', not 'state' — normalize
+      if (cleanAddressData.state !== undefined) {
+        cleanAddressData.province = cleanAddressData.province || cleanAddressData.state;
+        delete cleanAddressData.state;
+      }
 
       const res = await dbFetch(`/rest/v1/network_addresses`, {
         method: 'POST',
@@ -96,7 +101,7 @@ export async function POST(req: Request) {
       });
       if (!res.ok) {
         const errText = await res.text();
-        console.error('Supabase insert failed:', errText);
+        console.error('Address insert failed:', errText);
         return NextResponse.json({ success: false, error: errText }, { status: 400, headers });
       }
       return NextResponse.json({ success: true }, { headers });
@@ -108,10 +113,10 @@ export async function POST(req: Request) {
       if (!id) {
         return NextResponse.json({ error: 'Missing address ID' }, { status: 400, headers });
       }
-      
+
       if (id.toString().startsWith('shopify_')) {
         const shopifyAddressId = id.replace('shopify_', '');
-        
+
         // 1. Fetch merchant keys
         const merchantRes = await dbFetch(`/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=shopify_store_url,shopify_access_token`, {
           headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
@@ -127,7 +132,7 @@ export async function POST(req: Request) {
           headers: { 'X-Shopify-Access-Token': finalToken, 'Content-Type': 'application/json' }
         });
         const searchData = await searchRes.json();
-        
+
         if (searchData.customers && searchData.customers.length > 0) {
           const customerId = searchData.customers[0].id;
           // 3. Update in Shopify
@@ -143,7 +148,7 @@ export async function POST(req: Request) {
               country: 'India'
             }
           };
-          
+
           await fetch(`https://${shopify_store_url}/admin/api/2024-01/customers/${customerId}/addresses/${shopifyAddressId}.json`, {
             method: 'PUT',
             headers: { 'X-Shopify-Access-Token': finalToken, 'Content-Type': 'application/json' },
@@ -155,6 +160,11 @@ export async function POST(req: Request) {
         const cleanUpdateData = { ...updateData };
         delete cleanUpdateData.email;
         delete cleanUpdateData.company;
+        // DB column is 'province', not 'state' — normalize
+        if (cleanUpdateData.state !== undefined) {
+          cleanUpdateData.province = cleanUpdateData.province || cleanUpdateData.state;
+          delete cleanUpdateData.state;
+        }
 
         const res = await dbFetch(`/rest/v1/network_addresses?id=eq.${id}&phone=eq.${encodeURIComponent(phone)}`, {
           method: 'PATCH',
@@ -182,7 +192,7 @@ export async function POST(req: Request) {
 
       if (id.toString().startsWith('shopify_')) {
         const shopifyAddressId = id.replace('shopify_', '');
-        
+
         // 1. Fetch merchant keys
         const merchantRes = await dbFetch(`/rest/v1/saas_merchants?api_key=eq.${merchant_key}&select=shopify_store_url,shopify_access_token`, {
           headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
@@ -198,7 +208,7 @@ export async function POST(req: Request) {
           headers: { 'X-Shopify-Access-Token': finalToken, 'Content-Type': 'application/json' }
         });
         const searchData = await searchRes.json();
-        
+
         if (searchData.customers && searchData.customers.length > 0) {
           const customerId = searchData.customers[0].id;
           // 3. Delete from Shopify
@@ -209,7 +219,7 @@ export async function POST(req: Request) {
         }
         return NextResponse.json({ success: true }, { headers });
       } else {
-        // Delete local Supabase address
+        // Delete local address
         const res = await dbFetch(`/rest/v1/network_addresses?id=eq.${id}&phone=eq.${encodeURIComponent(phone)}`, {
           method: 'DELETE',
           headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
