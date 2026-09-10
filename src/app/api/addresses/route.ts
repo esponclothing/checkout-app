@@ -86,6 +86,11 @@ export async function POST(req: Request) {
         cleanAddressData.province = cleanAddressData.province || cleanAddressData.state;
         delete cleanAddressData.state;
       }
+      // DB column is 'zip', not 'pincode' — normalize
+      if (cleanAddressData.pincode !== undefined) {
+        cleanAddressData.zip = cleanAddressData.zip || cleanAddressData.pincode;
+        delete cleanAddressData.pincode;
+      }
 
       const res = await dbFetch(`/rest/v1/network_addresses`, {
         method: 'POST',
@@ -164,6 +169,11 @@ export async function POST(req: Request) {
         if (cleanUpdateData.state !== undefined) {
           cleanUpdateData.province = cleanUpdateData.province || cleanUpdateData.state;
           delete cleanUpdateData.state;
+        }
+        // DB column is 'zip', not 'pincode' — normalize
+        if (cleanUpdateData.pincode !== undefined) {
+          cleanUpdateData.zip = cleanUpdateData.zip || cleanUpdateData.pincode;
+          delete cleanUpdateData.pincode;
         }
 
         const res = await dbFetch(`/rest/v1/network_addresses?id=eq.${id}&phone=eq.${encodeURIComponent(phone)}`, {
