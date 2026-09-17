@@ -113,12 +113,51 @@ export async function completeShopifyOrder(params: CompleteOrderParams): Promise
     );
 
     if (lockRes.rows.length === 0) {
-      console.warn(`[OrderCompletion] Session ${existingSession.id} is currently processing. Waiting 2s...`);
-      await new Promise(r => setTimeout(r, 2000));
-      const recheck = await pool.query('SELECT status FROM checkout_sessions WHERE id = $1', [existingSession.id]);
-      if (recheck.rows[0]?.status === 'completed') {
-        return { success: true, already_completed: true, order_id: draftOrderId };
+      console.warn(`[OrderCompletion] Session ${existingSession.id} is currently processing. Waiting for concurrent worker...`);
+      for (let attempt = 1; attempt <= 8; attempt++) {
+        await new Promise(r => setTimeout(r, 1000));
+        const recheck = await pool.query('SELECT status, cart_details FROM checkout_sessions WHERE id = $1', [existingSession.id]);
+        if (recheck.rows[0]?.status === 'completed') {
+          console.log(`[OrderCompletion] Session ${existingSession.id} completed by concurrent worker.`);
+          let confirmedName: any = draftOrderId;
+          try {
+            const getDraft = await fetch(`${formattedUrl}/admin/api/2024-04/draft_orders/${draftOrderId}.json`, {
+              headers: { 'X-Shopify-Access-Token': shopifyToken }
+            });
+            const dData = await getDraft.json();
+            if (dData.draft_order?.order_id) {
+              const ordRes = await fetch(`${formattedUrl}/admin/api/2024-04/orders/${dData.draft_order.order_id}.json?fields=name`, {
+                headers: { 'X-Shopify-Access-Token': shopifyToken }
+              });
+              const oData = await ordRes.json();
+              if (oData.order?.name) confirmedName = oData.order.name;
+            }
+          } catch (e) {}
+
+          return {
+            success: true,
+            already_completed: true,
+            order_id: confirmedName
+          };
+        }
       }
+
+      // Check if draft order on Shopify was already completed
+      try {
+        const getDraft = await fetch(`${formattedUrl}/admin/api/2024-04/draft_orders/${draftOrderId}.json`, {
+          headers: { 'X-Shopify-Access-Token': shopifyToken }
+        });
+        const dData = await getDraft.json();
+        if (dData.draft_order?.status === 'completed' && dData.draft_order?.order_id) {
+          await pool.query(`UPDATE checkout_sessions SET status = 'completed', updated_at = NOW() WHERE id = $1`, [existingSession.id]);
+          return {
+            success: true,
+            already_completed: true,
+            order_id: dData.draft_order.order_id
+          };
+        }
+      } catch (e) {}
+
       await pool.query(`UPDATE checkout_sessions SET status = 'processing', updated_at = NOW() WHERE id = $1`, [existingSession.id]);
     }
   } else {
@@ -738,6 +777,22 @@ export async function completeShopifyOrder(params: CompleteOrderParams): Promise
         const META_TOKEN = merchant.payment_settings.wa_access_token || process.env.META_ACCESS_TOKEN;
         const PHONE_NUMBER_ID = merchant.payment_settings.wa_phone_number_id || process.env.PHONE_NUMBER_ID;
         if (!META_TOKEN || !PHONE_NUMBER_ID) return;
+
+        // Prevent duplicate WhatsApp confirmation messages from concurrent workers / webhooks
+        const waCheck = await pool.query(
+          `SELECT cart_details FROM checkout_sessions WHERE draft_order_id = $1 LIMIT 1`,
+          [draftOrderId]
+        );
+        if (waCheck.rows[0]?.cart_details?.whatsapp_sent) {
+          console.log(`[OrderCompletion] WhatsApp confirmation already sent for draft ${draftOrderId}. Skipping duplicate.`);
+          return;
+        }
+        await pool.query(
+          `UPDATE checkout_sessions 
+           SET cart_details = jsonb_set(COALESCE(cart_details, '{}'::jsonb), '{whatsapp_sent}', 'true'::jsonb) 
+           WHERE draft_order_id = $1`,
+          [draftOrderId]
+        );
 
         const customerName = shipping_address?.first_name || 'Customer';
         const firstItem = existingDraft?.line_items?.[0] || {};
