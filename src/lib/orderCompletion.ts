@@ -611,14 +611,23 @@ export async function completeShopifyOrder(params: CompleteOrderParams): Promise
   const bgTasks: Promise<any>[] = [];
 
   // 10.1 Customer Store Credit Wallet Debit
-  if (walletCreditAmount > 0 && existingCustomerId && merchant.payment_settings?.store_credit_enabled) {
+  const resolvedCustomerId = existingCustomerId || completeData.draft_order?.customer?.id || existingDraft.customer?.id;
+  if (walletCreditAmount > 0 && resolvedCustomerId && merchant.payment_settings?.store_credit_enabled) {
     bgTasks.push((async () => {
       try {
         const graphqlUrl = `${formattedUrl}/admin/api/2024-04/graphql.json`;
         const gqlHeaders = { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyToken };
-        const customerGid = `gid://shopify/Customer/${existingCustomerId}`;
+        const cleanCustId = String(resolvedCustomerId).replace('gid://shopify/Customer/', '');
+        const customerGid = `gid://shopify/Customer/${cleanCustId}`;
 
-        const fetchQ = `query { customer(id: "${customerGid}") { storeCreditAccounts(first:1) { edges { node { id balance { amount } } } } } }`;
+        const fetchQ = `query {
+          customer(id: "${customerGid}") {
+            storeCreditAccounts(first: 1) {
+              edges { node { id balance { amount } } }
+            }
+            metafield(namespace: "custom", key: "wallet_notes") { value }
+          }
+        }`;
         const fRes = await fetch(graphqlUrl, { method: 'POST', headers: gqlHeaders, body: JSON.stringify({ query: fetchQ }) });
         const fData = await fRes.json();
         const storeCreditAccountId = fData.data?.customer?.storeCreditAccounts?.edges?.[0]?.node?.id;
@@ -627,26 +636,46 @@ export async function completeShopifyOrder(params: CompleteOrderParams): Promise
           const balance = parseFloat(fData.data.customer.storeCreditAccounts.edges[0].node.balance.amount);
           const debitAmt = Math.min(walletCreditAmount, balance);
 
-          const debitMut = `mutation storeCreditAccountDebit($id: ID!, $debitInput: StoreCreditAccountDebitInput!) {
-            storeCreditAccountDebit(id: $id, debitInput: $debitInput) {
-              userErrors { field message }
-            }
-          }`;
-          await fetch(graphqlUrl, {
-            method: 'POST', headers: gqlHeaders,
-            body: JSON.stringify({
-              query: debitMut,
-              variables: { id: storeCreditAccountId, debitInput: { debitAmount: { amount: debitAmt.toFixed(2), currencyCode: 'INR' } } }
-            })
-          });
+          if (debitAmt > 0) {
+            const debitMut = `mutation storeCreditAccountDebit($id: ID!, $debitInput: StoreCreditAccountDebitInput!) {
+              storeCreditAccountDebit(id: $id, debitInput: $debitInput) {
+                userErrors { field message }
+              }
+            }`;
+            await fetch(graphqlUrl, {
+              method: 'POST', headers: gqlHeaders,
+              body: JSON.stringify({
+                query: debitMut,
+                variables: { id: storeCreditAccountId, debitInput: { debitAmount: { amount: debitAmt.toFixed(2), currencyCode: 'INR' } } }
+              })
+            });
 
-          const noteEntry = JSON.stringify([{ timestamp: new Date().toISOString(), type: 'debit', amount: debitAmt.toFixed(2), reason: `Used in Order #${draftOrderId}` }]);
-          const mfMut = `mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $metafields) { userErrors { message } } }`;
-          await fetch(graphqlUrl, {
-            method: 'POST', headers: gqlHeaders,
-            body: JSON.stringify({ query: mfMut, variables: { metafields: [{ ownerId: customerGid, namespace: 'custom', key: 'wallet_notes', type: 'json', value: noteEntry }] } })
-          });
-          console.log(`[OrderCompletion] Debited ₹${debitAmt} from store credit for customer ${existingCustomerId}`);
+            // Append to existing wallet_notes
+            let currentNotes: any[] = [];
+            try {
+              if (fData.data?.customer?.metafield?.value) {
+                currentNotes = JSON.parse(fData.data.customer.metafield.value);
+                if (!Array.isArray(currentNotes)) currentNotes = [];
+              }
+            } catch(e) {}
+
+            currentNotes.unshift({
+              timestamp: new Date().toISOString(),
+              type: 'debit',
+              amount: debitAmt.toFixed(2),
+              reason: `Used in Order #${completeData.draft_order?.order_id || draftOrderId}`
+            });
+
+            const mfMut = `mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $metafields) { userErrors { message } } }`;
+            await fetch(graphqlUrl, {
+              method: 'POST', headers: gqlHeaders,
+              body: JSON.stringify({
+                query: mfMut,
+                variables: { metafields: [{ ownerId: customerGid, namespace: 'custom', key: 'wallet_notes', type: 'json', value: JSON.stringify(currentNotes) }] }
+              })
+            });
+            console.log(`[OrderCompletion] Debited ₹${debitAmt} from store credit for customer ${customerGid}`);
+          }
         }
       } catch (e) {
         console.error('[OrderCompletion] Wallet debit error:', e);
@@ -655,56 +684,96 @@ export async function completeShopifyOrder(params: CompleteOrderParams): Promise
   }
 
   // 10.2 Prepaid Cashback Credit
-  if (params.payment_method === 'prepaid' && merchant.payment_settings?.cashback_enabled && existingCustomerId && completeData.draft_order) {
+  const isPrepaidOrder = (params.payment_method || '').toLowerCase() === 'prepaid';
+  if (isPrepaidOrder && merchant.payment_settings?.cashback_enabled && (completeData.draft_order || existingDraft)) {
     bgTasks.push((async () => {
       try {
-        const paidAmount = parseFloat(completeData.draft_order.total_price || existingDraft.total_price || '0');
-        const orderTotal = paidAmount + walletCreditAmount;
+        let finalCustomerId = resolvedCustomerId;
+        if (!finalCustomerId && createdOrderId) {
+          try {
+            const orderLookupRes = await fetch(`${formattedUrl}/admin/api/2024-04/orders/${createdOrderId}.json?fields=id,customer`, {
+              headers: { 'X-Shopify-Access-Token': shopifyToken }
+            });
+            if (orderLookupRes.ok) {
+              const oData = await orderLookupRes.json();
+              if (oData.order?.customer?.id) {
+                finalCustomerId = oData.order.customer.id;
+              }
+            }
+          } catch(e) {}
+        }
+
+        if (!finalCustomerId) {
+          console.warn(`[OrderCompletion] Cannot award cashback: Customer ID could not be resolved for order ${createdOrderId}`);
+          return;
+        }
+
+        const paidAmount = parseFloat(completeData.draft_order?.total_price || existingDraft.total_price || '0');
+        const orderTotal = paidAmount + (walletCreditAmount || 0);
         let cashbackAmt = 0;
         if (merchant.payment_settings.cashback_type === 'percent') {
-          cashbackAmt = (orderTotal * merchant.payment_settings.cashback_value) / 100;
+          const pct = parseFloat(merchant.payment_settings.cashback_value) || 0;
+          cashbackAmt = (orderTotal * pct) / 100;
         } else {
-          cashbackAmt = merchant.payment_settings.cashback_value;
+          cashbackAmt = parseFloat(merchant.payment_settings.cashback_value) || 0;
         }
 
         if (cashbackAmt > 0) {
-          const customerIdClean = String(existingCustomerId).replace('gid://shopify/Customer/', '');
+          const customerIdClean = String(finalCustomerId).replace('gid://shopify/Customer/', '');
           const customerGid = `gid://shopify/Customer/${customerIdClean}`;
           const graphqlUrl = `${formattedUrl}/admin/api/2024-04/graphql.json`;
           const shopifyHeaders = { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyToken };
 
-          const fetchQ = `query { customer(id: "${customerGid}") { storeCreditAccounts(first: 1) { edges { node { id } } } } }`;
+          // 1. Fetch customer store credit account and existing wallet notes
+          const fetchQ = `query {
+            customer(id: "${customerGid}") {
+              storeCreditAccounts(first: 1) {
+                edges { node { id } }
+              }
+              metafield(namespace: "custom", key: "wallet_notes") { value }
+            }
+          }`;
           const fetchRes = await fetch(graphqlUrl, { method: 'POST', headers: shopifyHeaders, body: JSON.stringify({ query: fetchQ }) });
           const fetchData = await fetchRes.json();
-          let storeCreditAccountId = fetchData.data?.customer?.storeCreditAccounts?.edges?.[0]?.node?.id;
+          const storeCreditAccountId = fetchData.data?.customer?.storeCreditAccounts?.edges?.[0]?.node?.id;
 
-          if (!storeCreditAccountId) {
-            const createRes = await fetch(`${formattedUrl}/admin/api/2024-04/customers/${customerIdClean}/store_credit_accounts.json`, {
-              method: 'POST', headers: shopifyHeaders, body: JSON.stringify({ store_credit_account: {} })
-            });
-            if (createRes.ok) {
-              const createData = await createRes.json();
-              if (createData.store_credit_account?.id) {
-                storeCreditAccountId = `gid://shopify/StoreCreditAccount/${createData.store_credit_account.id}`;
+          // Target ID for credit: use storeCreditAccountId if exists, or customerGid directly (Shopify automatically creates account on credit)
+          const targetCreditId = storeCreditAccountId || customerGid;
+
+          // 2. Perform Credit Mutation
+          const creditMutation = `mutation storeCreditAccountCredit($id: ID!, $creditInput: StoreCreditAccountCreditInput!) {
+            storeCreditAccountCredit(id: $id, creditInput: $creditInput) {
+              storeCreditAccountTransaction {
+                id
+                amount { amount currencyCode }
+                account { id balance { amount currencyCode } }
               }
+              userErrors { field message }
             }
-          }
+          }`;
+          const creditRes = await fetch(graphqlUrl, {
+            method: 'POST', headers: shopifyHeaders,
+            body: JSON.stringify({
+              query: creditMutation,
+              variables: { id: targetCreditId, creditInput: { creditAmount: { amount: cashbackAmt.toFixed(2), currencyCode: 'INR' } } }
+            })
+          });
+          const creditData = await creditRes.json();
+          console.log(`[OrderCompletion] Cashback of ₹${cashbackAmt.toFixed(2)} credited to ${customerGid}:`, JSON.stringify(creditData.data?.storeCreditAccountCredit || creditData));
 
-          if (storeCreditAccountId) {
-            const creditMutation = `mutation storeCreditAccountCredit($id: ID!, $creditInput: StoreCreditAccountCreditInput!) {
-              storeCreditAccountCredit(id: $id, creditInput: $creditInput) {
-                userErrors { field message }
-              }
-            }`;
-            await fetch(graphqlUrl, {
-              method: 'POST', headers: shopifyHeaders,
-              body: JSON.stringify({
-                query: creditMutation,
-                variables: { id: storeCreditAccountId, creditInput: { creditAmount: { amount: cashbackAmt.toFixed(2), currencyCode: 'INR' } } }
-              })
-            });
+          // 3. Tag Customer with Cashback_Rewarded
+          const tagMutation = `mutation tagsAdd($id: ID!, $tags: [String!]!) {
+            tagsAdd(id: $id, tags: $tags) { userErrors { message } }
+          }`;
+          await fetch(graphqlUrl, {
+            method: 'POST', headers: shopifyHeaders,
+            body: JSON.stringify({ query: tagMutation, variables: { id: customerGid, tags: ['Cashback_Rewarded'] } })
+          }).catch(e => console.error('[OrderCompletion] Tag customer error:', e));
 
-            if (createdOrderId) {
+          // 4. Update Shopify Order Note
+          const orderIdStr = completeData.draft_order?.order_id || createdOrderId || draftOrderId;
+          if (createdOrderId) {
+            try {
               const getOrderRes = await fetch(`${formattedUrl}/admin/api/2024-04/orders/${createdOrderId}.json`, {
                 headers: { 'X-Shopify-Access-Token': shopifyToken }
               });
@@ -718,47 +787,79 @@ export async function completeShopifyOrder(params: CompleteOrderParams): Promise
                 headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyToken },
                 body: JSON.stringify({ order: { id: createdOrderId, note: newNote } })
               });
+            } catch (e) {
+              console.error('[OrderCompletion] Order note update error:', e);
             }
+          }
 
-            const orderIdStr = completeData.draft_order.order_id || draftOrderId;
-            const noteEntry = JSON.stringify([{ timestamp: new Date().toISOString(), type: 'credit', amount: cashbackAmt.toFixed(2), reason: `Prepaid Cashback for Order #${orderIdStr}` }]);
-            const mfMut = `mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $metafields) { userErrors { message } } }`;
-            await fetch(graphqlUrl, {
-              method: 'POST', headers: shopifyHeaders,
-              body: JSON.stringify({ query: mfMut, variables: { metafields: [{ ownerId: customerGid, namespace: 'custom', key: 'wallet_notes', type: 'json', value: noteEntry }] } })
-            });
+          // 5. Append to Customer wallet_notes Metafield
+          let existingNotes: any[] = [];
+          try {
+            if (fetchData.data?.customer?.metafield?.value) {
+              existingNotes = JSON.parse(fetchData.data.customer.metafield.value);
+              if (!Array.isArray(existingNotes)) existingNotes = [];
+            }
+          } catch (e) {}
 
-            // WhatsApp Cashback Notification
-            if (merchant.payment_settings?.wa_workflows?.store_credit_cashback?.enabled && actualPhone && actualPhone !== 'MASKED') {
-              const cbWf = merchant.payment_settings.wa_workflows.store_credit_cashback;
-              if (cbWf.template_name) {
-                let sendPhone = actualPhone.replace(/\D/g, '');
-                if (sendPhone.length === 10) sendPhone = '91' + sendPhone;
-                const META_TOKEN = merchant.payment_settings.wa_access_token || process.env.META_ACCESS_TOKEN;
-                const PHONE_NUMBER_ID = merchant.payment_settings.wa_phone_number_id || process.env.PHONE_NUMBER_ID;
-                if (META_TOKEN && PHONE_NUMBER_ID) {
-                  await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${META_TOKEN}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      messaging_product: 'whatsapp',
-                      recipient_type: 'individual',
-                      to: sendPhone,
-                      type: 'template',
-                      template: {
-                        name: cbWf.template_name,
-                        language: { code: 'en_US' },
-                        components: [{ type: 'body', parameters: [{ type: 'text', text: cashbackAmt.toFixed(0) }, { type: 'text', text: String(orderIdStr) }] }]
-                      }
-                    })
-                  }).catch(e => console.error('[OrderCompletion] Cashback WA send error:', e));
-                }
-              }
+          existingNotes.unshift({
+            timestamp: new Date().toISOString(),
+            type: 'credit',
+            amount: cashbackAmt.toFixed(2),
+            reason: `Prepaid Cashback for Order #${orderIdStr}`,
+            expired: false
+          });
+
+          const mfMut = `mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $metafields) { userErrors { message } } }`;
+          await fetch(graphqlUrl, {
+            method: 'POST', headers: shopifyHeaders,
+            body: JSON.stringify({
+              query: mfMut,
+              variables: { metafields: [{ ownerId: customerGid, namespace: 'custom', key: 'wallet_notes', type: 'json', value: JSON.stringify(existingNotes) }] }
+            })
+          });
+
+          // 6. Send WhatsApp Cashback Notification
+          const cbWorkflow = merchant.payment_settings?.wa_workflows?.store_credit_cashback;
+          const isWaEnabled = cbWorkflow?.enabled !== false; // Default true if cashback is enabled
+          const phoneToNotify = actualPhone || params.phone || shipping_address?.phone;
+
+          if (isWaEnabled && phoneToNotify && phoneToNotify !== 'MASKED') {
+            let sendPhone = String(phoneToNotify).replace(/\D/g, '');
+            if (sendPhone.length === 10) sendPhone = '91' + sendPhone;
+            const META_TOKEN = merchant.payment_settings?.wa_access_token || process.env.META_ACCESS_TOKEN;
+            const PHONE_NUMBER_ID = merchant.payment_settings?.wa_phone_number_id || process.env.PHONE_NUMBER_ID;
+            const templateName = cbWorkflow?.template_name || 'cashback_credited_v1';
+
+            if (META_TOKEN && PHONE_NUMBER_ID && templateName) {
+              console.log(`[OrderCompletion] Sending WhatsApp Cashback Alert to ${sendPhone} (Template: ${templateName})...`);
+              await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${META_TOKEN}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  messaging_product: 'whatsapp',
+                  recipient_type: 'individual',
+                  to: sendPhone,
+                  type: 'template',
+                  template: {
+                    name: templateName,
+                    language: { code: 'en_US' },
+                    components: [{
+                      type: 'body',
+                      parameters: [
+                        { type: 'text', text: cashbackAmt.toFixed(0) },
+                        { type: 'text', text: String(orderIdStr) }
+                      ]
+                    }]
+                  }
+                })
+              }).then(r => r.json()).then(wRes => {
+                console.log('[OrderCompletion] WhatsApp Cashback notification result:', JSON.stringify(wRes));
+              }).catch(e => console.error('[OrderCompletion] Cashback WA send error:', e));
             }
           }
         }
       } catch (e) {
-        console.error('[OrderCompletion] Cashback error:', e);
+        console.error('[OrderCompletion] Prepaid Cashback error:', e);
       }
     })());
   }

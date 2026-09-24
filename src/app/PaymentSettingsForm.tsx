@@ -22,6 +22,9 @@ export default function PaymentSettingsForm({ initialSettings }: { initialSettin
     store_credit_enabled: false,
     store_credit_limit_type: 'unlimited',
     store_credit_limit_value: 0,
+    cashback_enabled: false,
+    cashback_type: 'percent',
+    cashback_value: 0,
     ...(initialSettings || {})
   });
   const [saving, setSaving] = useState(false);
@@ -198,6 +201,33 @@ export default function PaymentSettingsForm({ initialSettings }: { initialSettin
                       <div>
                         <label className="block text-sm font-medium text-slate-400 mb-2">Discount Value</label>
                         <input type="number" value={settings.prepaid_offer_value || 0} onChange={(e) => handleChange('prepaid_offer_value', Number(e.target.value))} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:border-blue-500 outline-none text-sm" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Prepaid Cashback Card */}
+                <div className="border border-slate-800 rounded-xl p-5 bg-slate-900/50">
+                  <label className="flex items-center gap-3 cursor-pointer mb-5">
+                    <input type="checkbox" checked={settings.cashback_enabled || false} onChange={(e) => handleChange('cashback_enabled', e.target.checked)} className="w-5 h-5 accent-emerald-500 rounded" />
+                    <div>
+                      <span className="text-white font-semibold block">Reward Prepaid Cashback</span>
+                      <span className="text-slate-400 text-xs">Automatically credit store wallet & send WhatsApp notification on successful prepaid orders.</span>
+                    </div>
+                  </label>
+                  
+                  {settings.cashback_enabled && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-400 mb-2">Cashback Type</label>
+                        <select value={settings.cashback_type || 'percent'} onChange={(e) => handleChange('cashback_type', e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:border-emerald-500 outline-none text-sm">
+                          <option value="percent">Percentage (%)</option>
+                          <option value="amount">Flat Amount (₹)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-400 mb-2">Cashback Value</label>
+                        <input type="number" value={settings.cashback_value || 0} onChange={(e) => handleChange('cashback_value', Number(e.target.value))} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:border-emerald-500 outline-none text-sm" />
                       </div>
                     </div>
                   )}
