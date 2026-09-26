@@ -16,7 +16,8 @@ export async function POST(req: Request) {
   
   try {
     const body = await req.json();
-    const { merchant_key, items, discount_code, cart_discount, cart_subtotal, raw_cart, utm_data } = body;
+    const { merchant_key, items, discount_code: discount_code_raw, cart_discount, cart_subtotal, raw_cart, utm_data } = body;
+    let discount_code: string | null = discount_code_raw || null;
 
     if (!merchant_key || !items) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400, headers });
