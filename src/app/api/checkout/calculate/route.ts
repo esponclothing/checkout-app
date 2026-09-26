@@ -91,7 +91,7 @@ export async function POST(req: Request) {
                   if (ruleData.price_rule) {
                     const rule = ruleData.price_rule;
                     const ruleValue = Math.abs(parseFloat(rule.value));
-                    totalDiscountAmount += ruleValue;
+                    totalDiscountAmount = ruleValue;
                     discount_code = testCode;
                     manualDiscountValid = true;
                     break;
@@ -136,7 +136,7 @@ export async function POST(req: Request) {
               manualDiscountValue = ruleValue;
             }
             
-            totalDiscountAmount += manualDiscountValue;
+            totalDiscountAmount = manualDiscountValue;
             manualDiscountValid = true;
           } else {
             return NextResponse.json({ error: 'invalid_discount' }, { status: 400, headers });
@@ -252,10 +252,16 @@ export async function POST(req: Request) {
     }
 
     // Return the calculated totals back to our Headless App
+    const originalSubtotal = shopifyData.draft_order.line_items?.reduce(
+      (sum: number, it: any) => sum + (parseFloat(it.price || '0') * (it.quantity || 1)), 
+      0
+    ) || parseFloat(shopifyData.draft_order.subtotal_price);
+
     return NextResponse.json({ 
       success: true, 
       draft_order_id: shopifyData.draft_order.id,
-      subtotal: shopifyData.draft_order.subtotal_price,
+      subtotal: originalSubtotal.toFixed(2),
+      discounted_subtotal: shopifyData.draft_order.subtotal_price,
       total_tax: shopifyData.draft_order.total_tax,
       total_price: shopifyData.draft_order.total_price,
       discount_amount: shopifyData.draft_order.applied_discount ? shopifyData.draft_order.applied_discount.amount : "0.00",
