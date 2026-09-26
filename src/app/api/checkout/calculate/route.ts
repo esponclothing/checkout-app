@@ -61,7 +61,51 @@ export async function POST(req: Request) {
     let totalDiscountAmount = cart_discount ? parseFloat(cart_discount) / 100 : 0;
     let manualDiscountValid = false;
 
-    if (discount_code) {
+    // Auto-detect combo discount if no manual discount code provided
+    if (!discount_code && raw_cart && Array.isArray(raw_cart.items)) {
+      const prodCounts: Record<string, number> = {};
+      raw_cart.items.forEach((it: any) => {
+        const pid = it.product_id ? String(it.product_id) : (it.properties?._combo_product_id ? String(it.properties._combo_product_id) : null);
+        if (pid) {
+          prodCounts[pid] = (prodCounts[pid] || 0) + (it.quantity || 1);
+        }
+      });
+
+      for (const [pid, count] of Object.entries(prodCounts)) {
+        if (count >= 2) {
+          for (let qty = count; qty >= 2; qty--) {
+            const testCode = `11FIT-COMBO-${pid}-${qty}`;
+            try {
+              const lookupRes = await fetch(`${formattedUrl}/admin/api/2024-01/discount_codes/lookup.json?code=${testCode}`, {
+                headers: { 'X-Shopify-Access-Token': shopifyToken },
+                redirect: 'manual'
+              });
+              const location = lookupRes.headers.get('location');
+              if (location) {
+                const match = location.match(/price_rules\/(\d+)/);
+                if (match && match[1]) {
+                  const ruleRes = await fetch(`${formattedUrl}/admin/api/2024-01/price_rules/${match[1]}.json`, {
+                    headers: { 'X-Shopify-Access-Token': shopifyToken }
+                  });
+                  const ruleData = await ruleRes.json();
+                  if (ruleData.price_rule) {
+                    const rule = ruleData.price_rule;
+                    const ruleValue = Math.abs(parseFloat(rule.value));
+                    totalDiscountAmount += ruleValue;
+                    discount_code = testCode;
+                    manualDiscountValid = true;
+                    break;
+                  }
+                }
+              }
+            } catch (e) {}
+          }
+          if (manualDiscountValid) break;
+        }
+      }
+    }
+
+    if (discount_code && !manualDiscountValid) {
       try {
         const lookupRes = await fetch(`${formattedUrl}/admin/api/2024-01/discount_codes/lookup.json?code=${discount_code}`, {
           headers: { 'X-Shopify-Access-Token': shopifyToken },
